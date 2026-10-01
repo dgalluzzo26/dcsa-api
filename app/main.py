@@ -29,7 +29,6 @@ app = FastAPI(
     contact={"name": "DCSA API"},
     openapi_tags=[
         {"name": "system", "description": "Health and identity"},
-        {"name": "records", "description": "Sample domain CRUD (swap store for UC/Lakebase later)"},
         {
             "name": "subject-identity",
             "description": "Look up dcsa_catalog.edladmin.subject_identity via OBO SQL",

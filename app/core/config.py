@@ -17,8 +17,6 @@ class Settings(BaseModel):
         warehouse_id: SQL warehouse id for OBO queries (``DATABRICKS_WAREHOUSE_ID``).
         subject_identity_table: Fully qualified subject identity table
             (``DCSA_SUBJECT_IDENTITY_TABLE``).
-        use_memory_store: Whether sample records use the in-memory store
-            (``DCSA_USE_MEMORY_STORE``).
     """
 
     app_name: str = Field(default_factory=lambda: os.getenv("DCSA_APP_NAME", "dcsa-api"))
@@ -31,10 +29,6 @@ class Settings(BaseModel):
             "DCSA_SUBJECT_IDENTITY_TABLE",
             "dcsa_catalog.edladmin.subject_identity",
         ).strip()
-    )
-    use_memory_store: bool = Field(
-        default_factory=lambda: os.getenv("DCSA_USE_MEMORY_STORE", "true").lower()
-        in ("1", "true", "yes")
     )
 
 
