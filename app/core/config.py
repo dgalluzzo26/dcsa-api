@@ -18,7 +18,8 @@ class Settings(BaseModel):
         subject_identity_table: Fully qualified subject identity table
             (``DCSA_SUBJECT_IDENTITY_TABLE``).
         request_log_table: Fully qualified request log table written by the
-            app service principal (``DCSA_REQUEST_LOG_TABLE``).
+            app service principal (``DCSA_REQUEST_LOG_TABLE``), in
+            ``dcsa_catalog.dcsa_api``.
         catalog_schema: Unity Catalog ``catalog.schema`` for subject tables
             (``DCSA_CATALOG_SCHEMA``).
     """
@@ -37,7 +38,7 @@ class Settings(BaseModel):
     request_log_table: str = Field(
         default_factory=lambda: os.getenv(
             "DCSA_REQUEST_LOG_TABLE",
-            "dcsa_catalog.edladmin.api_request_log",
+            "dcsa_catalog.dcsa_api.api_request_log",
         ).strip()
     )
     catalog_schema: str = Field(
