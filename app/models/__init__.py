@@ -17,7 +17,6 @@ from app.models.fpvr import (
     ReportCode,
     RequestStatusValue,
     SubjectCandidate,
-    TokenResponse,
 )
 from app.models.report_contract import ApiCatalog
 from app.models.subject_identity import (
@@ -85,5 +84,4 @@ __all__ = [
     "SubjectIdentity",
     "SubjectIdentityListResponse",
     "SubjectIdentitySearch",
-    "TokenResponse",
 ]

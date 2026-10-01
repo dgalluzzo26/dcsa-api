@@ -13,7 +13,6 @@ from app import __version__
 from app.core.config import get_settings
 from app.routes import router
 from app.routes.catalog import help_page
-from app.routes.oauth import router as oauth_router
 
 settings = get_settings()
 
@@ -45,7 +44,6 @@ app = FastAPI(
             "name": "catalog",
             "description": "Exact request/response schemas and scenarios for FPVR-1 through FPVR-7",
         },
-        {"name": "oauth", "description": "Client credentials token exchange"},
     ],
 )
 
@@ -57,7 +55,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(oauth_router)
 app.include_router(router, prefix="/api")
 app.add_api_route("/help", help_page, methods=["GET"], include_in_schema=False)
 

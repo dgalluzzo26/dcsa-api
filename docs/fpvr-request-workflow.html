@@ -163,7 +163,7 @@
     <tbody>
       <tr>
         <td>1. Auth</td>
-        <td class="mono">POST /oauth/token (client_id + client_secret)</td>
+        <td class="mono">POST {workspace}/oidc/v1/token (HTTP Basic client_id:client_secret)</td>
         <td>Bearer token</td>
         <td>401 invalid credentials</td>
       </tr>
@@ -266,7 +266,7 @@
     </div>
     <div class="card">
       <h3>routes</h3>
-      <p>POST /requests, GET /requests/{id}, GET /requests/{id}/response. Keep existing /health and /me. Token via POST /oauth/token.</p>
+      <p>POST /requests, GET /requests/{id}, GET /requests/{id}/response. Keep existing /health and /me. Token from workspace POST /oidc/v1/token, not this app.</p>
     </div>
   </div>
 

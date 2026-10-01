@@ -6,6 +6,7 @@ from typing import Any
 
 from app import __version__
 from app.core.config import get_settings
+from app.core.sql import WarehouseNotConfiguredError, workspace_host
 from app.models.fpvr import ReportCode
 from app.models.report_contract import (
     SECTION_ROW_MODELS,
@@ -183,24 +184,30 @@ def build_catalog() -> ApiCatalog:
         "requested_by": "sp-client-id",
     }
 
+    try:
+        oidc_path = f"{workspace_host()}/oidc/v1/token"
+    except WarehouseNotConfiguredError:
+        oidc_path = "https://<workspace-host>/oidc/v1/token"
+
     apis = [
         CatalogApi(
             id="token",
             method="POST",
-            path="/oauth/token",
-            auth="none (this call mints the Bearer token)",
-            summary="Exchange client_id and client_secret for a Databricks access token.",
+            path=oidc_path,
+            auth="HTTP Basic (client_id:client_secret). This is the workspace OIDC endpoint, not this app.",
+            summary=(
+                "Mint a Databricks access token with OAuth2 client_credentials "
+                "before calling this app. The app has no /oauth/token route."
+            ),
             request_body={
                 "grant_type": "client_credentials",
-                "client_id": "00000000-0000-0000-0000-000000000000",
-                "client_secret": "***",
                 "scope": "all-apis",
             },
             scenarios=[
                 CatalogScenario(
                     id="token_ok",
                     http_status=200,
-                    summary="Credentials accepted.",
+                    summary="Credentials accepted. Send access_token as Authorization: Bearer on app APIs.",
                     response={
                         "access_token": "<databricks-token>",
                         "token_type": "Bearer",
@@ -211,7 +218,7 @@ def build_catalog() -> ApiCatalog:
                     id="token_unauthorized",
                     http_status=401,
                     summary="Invalid client_id or client_secret.",
-                    response={"detail": "Invalid client_id or client_secret"},
+                    response={"error": "invalid_client"},
                 ),
             ],
         ),
@@ -219,7 +226,7 @@ def build_catalog() -> ApiCatalog:
             id="request",
             method="POST",
             path="/api/v1/requests",
-            auth="Bearer (token from POST /oauth/token or Apps OBO)",
+            auth="Bearer (workspace OIDC token)",
             summary=(
                 "Resolve a subject and open one official FPVR request. SSN is "
                 "optional when first_name + last_name + date_of_birth is unique."
@@ -375,7 +382,8 @@ def build_catalog() -> ApiCatalog:
         apis=apis,
         reports=reports,
         notes=[
-            "Call POST /oauth/token first, then Authorization: Bearer <access_token> on FPVR APIs.",
+            "Call POST {workspace}/oidc/v1/token with HTTP Basic (client_id:client_secret) "
+            "and grant_type=client_credentials, then Authorization: Bearer <access_token> on this app.",
             "Official requests are logged as the app service principal to "
             "dcsa_catalog.dcsa_api.api_request_log.",
             "Subject and report SELECT statements run on-behalf-of the caller.",

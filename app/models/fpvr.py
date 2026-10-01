@@ -193,17 +193,3 @@ class FPVRReportResponse(BaseModel):
     report_title: str
     subject: dict[str, Any]
     data: dict[str, Any]
-
-
-class TokenResponse(BaseModel):
-    """OAuth2 client_credentials token response.
-
-    Attributes:
-        access_token: Databricks access token.
-        token_type: Always Bearer.
-        expires_in: Lifetime in seconds, if the IdP returned it.
-    """
-
-    access_token: str
-    token_type: str = "Bearer"
-    expires_in: int | None = None
