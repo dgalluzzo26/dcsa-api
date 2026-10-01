@@ -1,3 +1,6 @@
-from app.core.config import Settings, get_settings, get_workspace_client
+"""Cross-cutting infrastructure: settings, authentication and SQL connectivity."""
 
-__all__ = ["Settings", "get_settings", "get_workspace_client"]
+from app.core.config import Settings, get_settings
+from app.core.obo import get_obo_token
+
+__all__ = ["Settings", "get_settings", "get_obo_token"]

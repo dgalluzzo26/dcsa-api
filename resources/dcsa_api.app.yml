@@ -4,3 +4,11 @@ resources:
       name: dcsa-api
       description: DCSA FastAPI backend (OpenAPI at /docs)
       source_code_path: ../
+      user_api_scopes:
+        - sql
+      resources:
+        - name: sql-warehouse
+          description: Serverless Starter Warehouse for OBO subject identity queries
+          sql_warehouse:
+            id: ${var.warehouse_id}
+            permission: CAN_USE

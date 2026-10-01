@@ -1,4 +1,8 @@
-"""FastAPI entrypoint for the DCSA Databricks App."""
+"""FastAPI entrypoint for the DCSA Databricks App.
+
+Builds the ``app`` object served by uvicorn (see ``app.yaml``) and mounts all
+API routes under ``/api``.
+"""
 
 from __future__ import annotations
 
@@ -26,6 +30,10 @@ app = FastAPI(
     openapi_tags=[
         {"name": "system", "description": "Health and identity"},
         {"name": "records", "description": "Sample domain CRUD (swap store for UC/Lakebase later)"},
+        {
+            "name": "subject-identity",
+            "description": "Look up dcsa_catalog.edladmin.subject_identity via OBO SQL",
+        },
     ],
 )
 
@@ -42,6 +50,11 @@ app.include_router(router, prefix="/api")
 
 @app.get("/", include_in_schema=False)
 def root() -> dict[str, str]:
+    """Return service metadata and links to the API documentation.
+
+    Returns:
+        App name, version, and paths to the docs and health endpoints.
+    """
     return {
         "app": settings.app_name,
         "version": __version__,

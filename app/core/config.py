@@ -9,10 +9,28 @@ from pydantic import BaseModel, Field
 
 
 class Settings(BaseModel):
+    """Application settings loaded from environment variables.
+
+    Attributes:
+        app_name: Application name (``DCSA_APP_NAME``).
+        environment: Deployment environment (``DCSA_ENV``).
+        warehouse_id: SQL warehouse id for OBO queries (``DATABRICKS_WAREHOUSE_ID``).
+        subject_identity_table: Fully qualified subject identity table
+            (``DCSA_SUBJECT_IDENTITY_TABLE``).
+        use_memory_store: Whether sample records use the in-memory store
+            (``DCSA_USE_MEMORY_STORE``).
+    """
+
     app_name: str = Field(default_factory=lambda: os.getenv("DCSA_APP_NAME", "dcsa-api"))
     environment: str = Field(default_factory=lambda: os.getenv("DCSA_ENV", "dev"))
     warehouse_id: str = Field(
-        default_factory=lambda: os.getenv("DATABRICKS_WAREHOUSE_ID", "").strip()
+        default_factory=lambda: os.getenv("DATABRICKS_WAREHOUSE_ID", "c56ad4dc84dcac90").strip()
+    )
+    subject_identity_table: str = Field(
+        default_factory=lambda: os.getenv(
+            "DCSA_SUBJECT_IDENTITY_TABLE",
+            "dcsa_catalog.edladmin.subject_identity",
+        ).strip()
     )
     use_memory_store: bool = Field(
         default_factory=lambda: os.getenv("DCSA_USE_MEMORY_STORE", "true").lower()
@@ -22,11 +40,9 @@ class Settings(BaseModel):
 
 @lru_cache
 def get_settings() -> Settings:
+    """Return the process-wide settings, read from the environment once.
+
+    Returns:
+        The cached ``Settings`` instance.
+    """
     return Settings()
-
-
-def get_workspace_client():
-    """App SP via SDK Config() — uses injected DATABRICKS_* in Databricks Apps."""
-    from databricks.sdk import WorkspaceClient
-
-    return WorkspaceClient()

@@ -16,17 +16,16 @@ bundle:
 include:
   - resources/*.yml
 
+variables:
+  warehouse_id:
+    description: SQL warehouse used for OBO subject identity queries
+    default: c56ad4dc84dcac90
+
 sync:
   exclude:
     - .git
-    - .venv
-    - venv
     - "**/__pycache__"
-    - "**/.DS_Store"
     - "**/*.pyc"
-    - .pytest_cache
-    - .mypy_cache
-    - .ruff_cache
 
 targets:
   dev:
@@ -41,3 +40,4 @@ targets:
     workspace:
       host: https://govfood-dsca.cloud.databricks.us
       profile: govfood-dsca
+      root_path: /Workspace/Users/${workspace.current_user.userName}/.bundle/${bundle.name}/${bundle.target}
