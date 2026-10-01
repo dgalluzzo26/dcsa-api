@@ -1,0 +1,43 @@
+# Declarative Automation Bundle — DCSA FastAPI backend (Databricks App).
+#
+# Target workspace: https://govfood-dsca.cloud.databricks.us/
+#
+# Before first deploy, create/login a CLI profile for that host:
+#   databricks auth login --host https://govfood-dsca.cloud.databricks.us --profile govfood-dsca
+#
+# Then:
+#   databricks bundle validate -t dev --profile govfood-dsca
+#   databricks bundle deploy -t dev --profile govfood-dsca --auto-approve
+#   databricks apps deploy dcsa-api --profile govfood-dsca --auto-approve
+
+bundle:
+  name: dcsa-api
+
+include:
+  - resources/*.yml
+
+sync:
+  exclude:
+    - .git
+    - .venv
+    - venv
+    - "**/__pycache__"
+    - "**/.DS_Store"
+    - "**/*.pyc"
+    - .pytest_cache
+    - .mypy_cache
+    - .ruff_cache
+
+targets:
+  dev:
+    mode: development
+    default: true
+    workspace:
+      host: https://govfood-dsca.cloud.databricks.us
+      profile: govfood-dsca
+
+  prod:
+    mode: production
+    workspace:
+      host: https://govfood-dsca.cloud.databricks.us
+      profile: govfood-dsca

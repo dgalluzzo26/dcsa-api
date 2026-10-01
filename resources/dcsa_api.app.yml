@@ -1,0 +1,6 @@
+resources:
+  apps:
+    dcsa_api:
+      name: dcsa-api
+      description: DCSA FastAPI backend (OpenAPI at /docs)
+      source_code_path: ../

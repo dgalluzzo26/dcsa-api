@@ -1,0 +1,16 @@
+# Databricks Apps runtime — FastAPI backend only.
+# OpenAPI UI: /docs  ·  ReDoc: /redoc  ·  OpenAPI JSON: /openapi.json
+command:
+  - uvicorn
+  - app.main:app
+  - --host
+  - "0.0.0.0"
+  - --port
+  - "8000"
+
+env:
+  - name: DCSA_APP_NAME
+    value: "dcsa-api"
+  # Optional: bind a SQL warehouse in the App UI, then uncomment:
+  # - name: DATABRICKS_WAREHOUSE_ID
+  #   valueFrom: sql-warehouse
