@@ -12,6 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app import __version__
 from app.core.config import get_settings
 from app.routes import router
+from app.routes.oauth import router as oauth_router
 
 settings = get_settings()
 
@@ -33,6 +34,11 @@ app = FastAPI(
             "name": "subject-identity",
             "description": "Look up dcsa_catalog.edladmin.subject_identity via OBO SQL",
         },
+        {
+            "name": "fpvr-requests",
+            "description": "Official FPVR request, status, and OBO report response",
+        },
+        {"name": "oauth", "description": "Client credentials token exchange"},
     ],
 )
 
@@ -44,6 +50,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.include_router(oauth_router)
 app.include_router(router, prefix="/api")
 
 

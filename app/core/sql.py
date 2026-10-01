@@ -26,11 +26,7 @@ def execute_obo_statement(
     *,
     user_token: str,
 ) -> list[list[Any]]:
-    """Execute SQL through the Statement Execution API as the calling user.
-
-    This standard-library implementation avoids a runtime dependency on the
-    Databricks SQL connector. Unity Catalog permissions, row filters and column
-    masks are evaluated for ``user_token``.
+    """Execute SQL as the calling user (OBO).
 
     Args:
         statement: SQL text containing named parameter markers (for example
@@ -45,31 +41,56 @@ def execute_obo_statement(
         WarehouseNotConfiguredError: If the host or warehouse id is empty.
         SqlStatementError: If the API request or SQL statement fails.
     """
+    return execute_statement(statement, parameters, access_token=user_token)
+
+
+def execute_statement(
+    statement: str,
+    parameters: dict[str, str] | None = None,
+    *,
+    access_token: str,
+) -> list[list[Any]]:
+    """Execute SQL through the Statement Execution API.
+
+    Unity Catalog grants, row filters and column masks are evaluated for
+    ``access_token``. Pass the caller token for OBO reads or the app service
+    principal token for request-log writes.
+
+    Args:
+        statement: SQL text containing named parameter markers (for example
+            ``:ssn``).
+        parameters: Named string parameter values.
+        access_token: Databricks access token used for the statement.
+
+    Returns:
+        Result rows in statement column order.
+
+    Raises:
+        WarehouseNotConfiguredError: If the host or warehouse id is empty.
+        SqlStatementError: If the API request or SQL statement fails.
+    """
     settings = get_settings()
     warehouse_id = settings.warehouse_id
     if not warehouse_id:
         raise WarehouseNotConfiguredError("DATABRICKS_WAREHOUSE_ID is not set")
-    host = os.getenv("DATABRICKS_HOST", "").rstrip("/")
-    if not host:
-        raise WarehouseNotConfiguredError("DATABRICKS_HOST is not set")
-    if not host.startswith(("http://", "https://")):
-        host = f"https://{host}"
+    host = workspace_host()
 
-    payload = {
+    payload: dict[str, Any] = {
         "warehouse_id": warehouse_id,
         "statement": statement,
-        "parameters": [
-            {"name": name, "value": value, "type": "STRING"}
-            for name, value in parameters.items()
-        ],
         "wait_timeout": "30s",
         "on_wait_timeout": "CONTINUE",
         "format": "JSON_ARRAY",
         "disposition": "INLINE",
     }
+    if parameters:
+        payload["parameters"] = [
+            {"name": name, "value": value, "type": "STRING"}
+            for name, value in parameters.items()
+        ]
     response = _request_json(
         f"{host}/api/2.0/sql/statements",
-        user_token=user_token,
+        access_token=access_token,
         method="POST",
         payload=payload,
     )
@@ -77,7 +98,7 @@ def execute_obo_statement(
     for _ in range(60):
         state = response.get("status", {}).get("state")
         if state == "SUCCEEDED":
-            return _collect_rows(host, response, user_token=user_token)
+            return _collect_rows(host, response, access_token=access_token)
         if state in {"FAILED", "CANCELED", "CLOSED"}:
             error = response.get("status", {}).get("error", {})
             raise SqlStatementError(error.get("message") or f"Statement ended in {state}")
@@ -86,12 +107,29 @@ def execute_obo_statement(
         time.sleep(1)
         response = _request_json(
             f"{host}/api/2.0/sql/statements/{statement_id}",
-            user_token=user_token,
+            access_token=access_token,
         )
     raise SqlStatementError("SQL statement did not finish within 60 seconds")
 
 
-def _collect_rows(host: str, response: dict[str, Any], *, user_token: str) -> list[list[Any]]:
+def workspace_host() -> str:
+    """Return the Databricks workspace host from ``DATABRICKS_HOST``.
+
+    Returns:
+        Absolute ``https://`` workspace URL with no trailing slash.
+
+    Raises:
+        WarehouseNotConfiguredError: If ``DATABRICKS_HOST`` is empty.
+    """
+    host = os.getenv("DATABRICKS_HOST", "").rstrip("/")
+    if not host:
+        raise WarehouseNotConfiguredError("DATABRICKS_HOST is not set")
+    if not host.startswith(("http://", "https://")):
+        host = f"https://{host}"
+    return host
+
+
+def _collect_rows(host: str, response: dict[str, Any], *, access_token: str) -> list[list[Any]]:
     """Collect the inline result and any additional result chunks.
 
     Args:
@@ -106,7 +144,7 @@ def _collect_rows(host: str, response: dict[str, Any], *, user_token: str) -> li
     rows = list(result.get("data_array") or [])
     next_link = result.get("next_chunk_internal_link")
     while next_link:
-        chunk = _request_json(f"{host}{next_link}", user_token=user_token)
+        chunk = _request_json(f"{host}{next_link}", access_token=access_token)
         rows.extend(chunk.get("data_array") or [])
         next_link = chunk.get("next_chunk_internal_link")
     return rows
@@ -115,7 +153,7 @@ def _collect_rows(host: str, response: dict[str, Any], *, user_token: str) -> li
 def _request_json(
     url: str,
     *,
-    user_token: str,
+    access_token: str,
     method: str = "GET",
     payload: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
@@ -123,7 +161,7 @@ def _request_json(
 
     Args:
         url: Absolute workspace API URL.
-        user_token: The caller's Databricks access token.
+        access_token: Databricks access token.
         method: HTTP method.
         payload: Optional JSON request body.
 
@@ -139,7 +177,7 @@ def _request_json(
         data=data,
         method=method,
         headers={
-            "Authorization": f"Bearer {user_token}",
+            "Authorization": f"Bearer {access_token}",
             "Content-Type": "application/json",
         },
     )

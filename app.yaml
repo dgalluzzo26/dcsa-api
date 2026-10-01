@@ -15,3 +15,7 @@ env:
     valueFrom: sql-warehouse
   - name: DCSA_SUBJECT_IDENTITY_TABLE
     value: "dcsa_catalog.edladmin.subject_identity"
+  - name: DCSA_REQUEST_LOG_TABLE
+    value: "dcsa_catalog.edladmin.api_request_log"
+  - name: DCSA_CATALOG_SCHEMA
+    value: "dcsa_catalog.edladmin"

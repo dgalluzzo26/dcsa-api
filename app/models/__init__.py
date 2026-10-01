@@ -8,6 +8,17 @@ from __future__ import annotations
 
 from pydantic import BaseModel
 
+from app.models.fpvr import (
+    AmbiguousSubjectResponse,
+    FPVRReportResponse,
+    FPVRRequestAccepted,
+    FPVRRequestCreate,
+    FPVRRequestStatus,
+    ReportCode,
+    RequestStatusValue,
+    SubjectCandidate,
+    TokenResponse,
+)
 from app.models.subject_identity import (
     SubjectIdentity,
     SubjectIdentityListResponse,
@@ -58,10 +69,19 @@ class ErrorResponse(BaseModel):
 
 
 __all__ = [
+    "AmbiguousSubjectResponse",
     "ErrorResponse",
+    "FPVRReportResponse",
+    "FPVRRequestAccepted",
+    "FPVRRequestCreate",
+    "FPVRRequestStatus",
     "HealthResponse",
     "MeResponse",
+    "ReportCode",
+    "RequestStatusValue",
+    "SubjectCandidate",
     "SubjectIdentity",
     "SubjectIdentityListResponse",
     "SubjectIdentitySearch",
+    "TokenResponse",
 ]

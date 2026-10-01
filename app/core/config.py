@@ -17,6 +17,10 @@ class Settings(BaseModel):
         warehouse_id: SQL warehouse id for OBO queries (``DATABRICKS_WAREHOUSE_ID``).
         subject_identity_table: Fully qualified subject identity table
             (``DCSA_SUBJECT_IDENTITY_TABLE``).
+        request_log_table: Fully qualified request log table written by the
+            app service principal (``DCSA_REQUEST_LOG_TABLE``).
+        catalog_schema: Unity Catalog ``catalog.schema`` for subject tables
+            (``DCSA_CATALOG_SCHEMA``).
     """
 
     app_name: str = Field(default_factory=lambda: os.getenv("DCSA_APP_NAME", "dcsa-api"))
@@ -28,6 +32,18 @@ class Settings(BaseModel):
         default_factory=lambda: os.getenv(
             "DCSA_SUBJECT_IDENTITY_TABLE",
             "dcsa_catalog.edladmin.subject_identity",
+        ).strip()
+    )
+    request_log_table: str = Field(
+        default_factory=lambda: os.getenv(
+            "DCSA_REQUEST_LOG_TABLE",
+            "dcsa_catalog.edladmin.api_request_log",
+        ).strip()
+    )
+    catalog_schema: str = Field(
+        default_factory=lambda: os.getenv(
+            "DCSA_CATALOG_SCHEMA",
+            "dcsa_catalog.edladmin",
         ).strip()
     )
 

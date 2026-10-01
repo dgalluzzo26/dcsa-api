@@ -6,6 +6,16 @@ never raise ``HTTPException``; routes translate those exceptions into HTTP error
 
 from __future__ import annotations
 
+from app.services.fpvr import (
+    AmbiguousSubjectError,
+    FPVRRequestService,
+    OfficialRequestNotFoundError,
+    RequestNotReadyError,
+    SubjectNotFoundError,
+    get_fpvr_request_service,
+)
+from app.services.reports import ReportAssembler, ReportQueryError, get_report_assembler
+from app.services.request_log import RequestLogError, RequestLogService, get_request_log_service
 from app.services.subject_identity import (
     SubjectIdentityQueryError,
     SubjectIdentityService,
@@ -13,7 +23,19 @@ from app.services.subject_identity import (
 )
 
 __all__ = [
+    "AmbiguousSubjectError",
+    "FPVRRequestService",
+    "OfficialRequestNotFoundError",
+    "ReportAssembler",
+    "ReportQueryError",
+    "RequestLogError",
+    "RequestLogService",
+    "RequestNotReadyError",
     "SubjectIdentityQueryError",
     "SubjectIdentityService",
+    "SubjectNotFoundError",
+    "get_fpvr_request_service",
+    "get_report_assembler",
+    "get_request_log_service",
     "get_subject_identity_service",
 ]
