@@ -19,6 +19,7 @@ from app.models.fpvr import (
     SubjectCandidate,
     TokenResponse,
 )
+from app.models.report_contract import ApiCatalog
 from app.models.subject_identity import (
     SubjectIdentity,
     SubjectIdentityListResponse,
@@ -70,6 +71,7 @@ class ErrorResponse(BaseModel):
 
 __all__ = [
     "AmbiguousSubjectResponse",
+    "ApiCatalog",
     "ErrorResponse",
     "FPVRReportResponse",
     "FPVRRequestAccepted",

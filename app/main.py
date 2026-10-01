@@ -12,6 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app import __version__
 from app.core.config import get_settings
 from app.routes import router
+from app.routes.catalog import help_page
 from app.routes.oauth import router as oauth_router
 
 settings = get_settings()
@@ -21,6 +22,8 @@ app = FastAPI(
     description=(
         "Backend FastAPI service for DCSA on Databricks Apps.\n\n"
         "## Docs\n"
+        "- FPVR catalog (schemas + scenarios): [`/api/v1/catalog`](/api/v1/catalog)\n"
+        "- Human-readable help: [`/help`](/help)\n"
         "- Interactive Swagger UI: [`/docs`](/docs)\n"
         "- ReDoc: [`/redoc`](/redoc)\n"
         "- OpenAPI JSON: [`/openapi.json`](/openapi.json)\n\n"
@@ -38,6 +41,10 @@ app = FastAPI(
             "name": "fpvr-requests",
             "description": "Official FPVR request, status, and OBO report response",
         },
+        {
+            "name": "catalog",
+            "description": "Exact request/response schemas and scenarios for FPVR-1 through FPVR-7",
+        },
         {"name": "oauth", "description": "Client credentials token exchange"},
     ],
 )
@@ -52,6 +59,7 @@ app.add_middleware(
 
 app.include_router(oauth_router)
 app.include_router(router, prefix="/api")
+app.add_api_route("/help", help_page, methods=["GET"], include_in_schema=False)
 
 
 @app.get("/", include_in_schema=False)
@@ -66,6 +74,8 @@ def root() -> dict[str, str]:
         "version": __version__,
         "docs": "/docs",
         "redoc": "/redoc",
+        "help": "/help",
+        "catalog": "/api/v1/catalog",
         "openapi": "/openapi.json",
         "health": "/api/health",
     }

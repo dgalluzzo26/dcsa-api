@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>FPVR request API workflow</title>
+  <style>
+    @page {
+      size: letter;
+      margin: 0.65in 0.7in 0.7in 0.7in;
+    }
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0;
+      padding: 0;
+      color: #1a1a1a;
+      font: 10.5pt/1.45 "Helvetica Neue", Helvetica, Arial, sans-serif;
+      background: #fff;
+    }
+    h1 {
+      font-size: 20pt;
+      font-weight: 650;
+      letter-spacing: -0.02em;
+      margin: 0 0 6pt;
+    }
+    h2 {
+      font-size: 12.5pt;
+      font-weight: 650;
+      margin: 16pt 0 6pt;
+      page-break-after: avoid;
+    }
+    h3 {
+      font-size: 10.5pt;
+      font-weight: 650;
+      margin: 0 0 4pt;
+    }
+    p { margin: 0 0 8pt; }
+    .lede { color: #444; max-width: 46rem; }
+    .muted { color: #555; }
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 8pt;
+      margin: 14pt 0 12pt;
+    }
+    .stat {
+      border: 1px solid #d8d8d8;
+      padding: 8pt 10pt;
+    }
+    .stat .n {
+      font-size: 16pt;
+      font-weight: 650;
+      line-height: 1.1;
+    }
+    .stat .l {
+      font-size: 8.5pt;
+      color: #555;
+      margin-top: 2pt;
+    }
+    .callout {
+      border-left: 3px solid #2b6cb0;
+      background: #f4f7fb;
+      padding: 8pt 10pt;
+      margin: 0 0 12pt;
+    }
+    .callout.warn {
+      border-left-color: #b7791f;
+      background: #fbf7ef;
+    }
+    .grid-3, .grid-2 {
+      display: grid;
+      gap: 10pt;
+      margin: 8pt 0 4pt;
+    }
+    .grid-3 { grid-template-columns: 1fr 1fr 1fr; }
+    .grid-2 { grid-template-columns: 1fr 1fr; }
+    .card {
+      border: 1px solid #d8d8d8;
+      padding: 9pt 10pt;
+      page-break-inside: avoid;
+    }
+    .card-h {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      gap: 8pt;
+      font-weight: 650;
+      margin-bottom: 4pt;
+    }
+    .pill {
+      font-size: 8pt;
+      font-weight: 600;
+      border: 1px solid #cfcfcf;
+      padding: 1pt 6pt;
+      white-space: nowrap;
+    }
+    .pill.ok { border-color: #2f855a; color: #276749; }
+    .pill.warn { border-color: #b7791f; color: #975a16; }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 9.5pt;
+      margin: 6pt 0 10pt;
+    }
+    th, td {
+      text-align: left;
+      vertical-align: top;
+      border-bottom: 1px solid #e2e2e2;
+      padding: 5pt 7pt 5pt 0;
+    }
+    th {
+      font-size: 8pt;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: #555;
+      font-weight: 650;
+    }
+    .mono { font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 8.8pt; }
+    .footer {
+      margin-top: 14pt;
+      font-size: 8.5pt;
+      color: #666;
+      border-top: 1px solid #ddd;
+      padding-top: 8pt;
+    }
+    hr {
+      border: 0;
+      border-top: 1px solid #ddd;
+      margin: 12pt 0;
+    }
+  </style>
+</head>
+<body>
+  <h1>FPVR request API workflow</h1>
+  <p class="lede">
+    DCSA API on Databricks Apps. Callers authenticate with client id and secret,
+    open an official request for one FPVR report, poll until ready, then fetch
+    the payload. Request logging uses the app service principal; report data is
+    queried on-behalf-of the caller so Unity Catalog ABAC and RBAC apply.
+  </p>
+
+  <div class="stats">
+    <div class="stat"><div class="n">4</div><div class="l">Caller steps</div></div>
+    <div class="stat"><div class="n">3</div><div class="l">Public APIs</div></div>
+    <div class="stat"><div class="n">5</div><div class="l">Source tables</div></div>
+    <div class="stat"><div class="n">7</div><div class="l">FPVR reports in the mock</div></div>
+  </div>
+
+  <div class="callout">
+    The mock covers all seven FPVR reports, including FPVR-6 Human Capital,
+    using the five edladmin streaming tables.
+  </div>
+
+  <h2>Caller flow</h2>
+  <p class="muted">
+    Machine-to-machine. Token is OAuth2 client credentials, then three HTTP
+    calls. Entity resolution happens inside the request API, before an official
+    request id is issued.
+  </p>
+  <table>
+    <thead>
+      <tr><th>Step</th><th>Call</th><th>Success</th><th>Otherwise</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>1. Auth</td>
+        <td class="mono">POST /oauth/token (client_id + client_secret)</td>
+        <td>Bearer token</td>
+        <td>401 invalid credentials</td>
+      </tr>
+      <tr>
+        <td>2. Request</td>
+        <td class="mono">POST /api/v1/requests</td>
+        <td>201 + request_id (unique subject)</td>
+        <td>409 candidates without SSN, or 404 none</td>
+      </tr>
+      <tr>
+        <td>3. Status</td>
+        <td class="mono">GET /api/v1/requests/{id}</td>
+        <td>pending | ready | failed</td>
+        <td>403/404 if not the caller’s request</td>
+      </tr>
+      <tr>
+        <td>4. Response</td>
+        <td class="mono">GET /api/v1/requests/{id}/response</td>
+        <td>Report JSON (OBO query)</td>
+        <td>409 if not ready; empty/denied if ABAC hides rows</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h2>Entity resolution before an official request</h2>
+  <div class="grid-3">
+    <div class="card">
+      <div class="card-h">No subject <span class="pill">0 matches</span></div>
+      <p>HTTP 404. Nothing is written to the request log. Caller must tighten or correct identity fields.</p>
+    </div>
+    <div class="card">
+      <div class="card-h">Ambiguous <span class="pill warn">2+ matches</span></div>
+      <p>HTTP 409. Return candidate list without SSN (name, DOB, place of birth, sex, citizenship) plus an opaque candidate_id. No request id yet. Caller resubmits with candidate_id or more filters.</p>
+    </div>
+    <div class="card">
+      <div class="card-h">Official request <span class="pill ok">1 match</span></div>
+      <p>HTTP 201. App SP inserts a request row, generates request_id, stores report code, caller identity, timestamps. Status starts pending or ready depending on whether the report is in-lake.</p>
+    </div>
+  </div>
+
+  <h2>Auth and identity split</h2>
+  <div class="grid-2">
+    <div class="card">
+      <div class="card-h">Token (caller)</div>
+      <p>OAuth2 client_credentials against the Databricks workspace (service principal client id and secret). Use that Bearer on every API call. Do not mint a custom token store.</p>
+      <p class="muted">The same token is the OBO credential for SQL Statement Execution when serving the report.</p>
+    </div>
+    <div class="card">
+      <div class="card-h">Who runs which SQL</div>
+      <p>App SP: INSERT/UPDATE on the request log table only (audit must always land).</p>
+      <p>Caller OBO: SELECT on subject_* tables when assembling a ready response, so row filters, column masks, and grants apply.</p>
+    </div>
+  </div>
+
+  <h2>Request log (App SP)</h2>
+  <p class="muted">Table: <span class="mono">dcsa_catalog.dcsa_api.api_request_log</span></p>
+  <table>
+    <thead><tr><th>Column</th><th>Purpose</th></tr></thead>
+    <tbody>
+      <tr><td class="mono">request_id</td><td>Public handle returned to the caller</td></tr>
+      <tr><td class="mono">report_code</td><td>FPVR-1 … FPVR-7</td></tr>
+      <tr><td class="mono">subject_ssn</td><td>Internal join key; never returned on status or candidates</td></tr>
+      <tr><td class="mono">status</td><td>pending | ready | failed</td></tr>
+      <tr><td class="mono">requested_by</td><td>SP client id or forwarded user</td></tr>
+      <tr><td class="mono">requested_at</td><td>Official request time</td></tr>
+      <tr><td class="mono">ready_at</td><td>When payload became servable</td></tr>
+      <tr><td class="mono">resolution_method</td><td>unique_match | candidate_id</td></tr>
+    </tbody>
+  </table>
+
+  <h2>Report mapping (5 tables, 7 reports)</h2>
+  <table>
+    <thead>
+      <tr><th>Report</th><th>Name</th><th>edladmin sources</th><th>Typical readiness</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>FPVR-1</td><td>Application Bundle</td><td>identity + status + check</td><td>Ready when identity is resolved; available sections may be empty</td></tr>
+      <tr><td>FPVR-2</td><td>Investigation Summary</td><td>check + activity</td><td>May stay pending until checks land</td></tr>
+      <tr><td>FPVR-3</td><td>Adjudication Summary</td><td>status + check</td><td>Ready when status exists</td></tr>
+      <tr><td>FPVR-4</td><td>CV Summary</td><td>identity + status</td><td>Usually ready in-lake</td></tr>
+      <tr><td>FPVR-5</td><td>CV Alerts</td><td>signal</td><td>Ready with zero or more alerts</td></tr>
+      <tr><td>FPVR-6</td><td>Human Capital</td><td>identity + status</td><td>Ready when identity is present</td></tr>
+      <tr><td>FPVR-7</td><td>Favorable to Onboard</td><td>status</td><td>Ready if STATUS_CODE is present</td></tr>
+    </tbody>
+  </table>
+  <p class="muted">
+    Source: dcsa_catalog.edladmin streaming tables · subject_identity,
+    subject_status, subject_check, subject_activity, subject_signal.
+  </p>
+
+  <h2>Proposed modules</h2>
+  <div class="grid-3">
+    <div class="card">
+      <h3>models</h3>
+      <p>RequestCreate, Candidate, RequestAccepted, RequestStatus, Report payload schemas per FPVR code.</p>
+    </div>
+    <div class="card">
+      <h3>services</h3>
+      <p>EntityResolutionService (OBO identity lookup), RequestLogService (App SP), ReportAssemblerService (OBO).</p>
+    </div>
+    <div class="card">
+      <h3>routes</h3>
+      <p>POST /requests, GET /requests/{id}, GET /requests/{id}/response. Keep existing /health and /me. Token via POST /oauth/token.</p>
+    </div>
+  </div>
+
+  <div class="callout warn">
+    Pending reports in this mock can flip to ready on a status poll by re-checking
+    the lake (no external fetch yet). That keeps the poll contract without a job
+    queue. A later worker can update status asynchronously using the same request_id.
+  </div>
+
+  <div class="footer">
+    DCSA API · FPVR request workflow · App:
+    https://dcsa-api-5515510170350333.aws-gov.databricksapps.us
+  </div>
+</body>
+</html>

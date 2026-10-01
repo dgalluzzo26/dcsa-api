@@ -12,12 +12,14 @@ from fastapi import APIRouter, Request
 from app import __version__
 from app.core.config import get_settings
 from app.models import HealthResponse, MeResponse
+from app.routes.catalog import router as catalog_router
 from app.routes.fpvr import router as fpvr_router
 from app.routes.subject_identity import router as subject_identity_router
 
 router = APIRouter()
 router.include_router(subject_identity_router)
 router.include_router(fpvr_router)
+router.include_router(catalog_router)
 
 
 @router.get(
