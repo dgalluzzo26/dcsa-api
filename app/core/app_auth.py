@@ -45,9 +45,12 @@ def get_app_sp_token() -> str:
     client_id = os.getenv("DATABRICKS_CLIENT_ID", "").strip()
     client_secret = os.getenv("DATABRICKS_CLIENT_SECRET", "").strip()
     if not client_id or not client_secret:
+        local_token = os.getenv("DATABRICKS_TOKEN", "").strip()
+        if local_token:
+            return local_token
         raise AppPrincipalError(
             "DATABRICKS_CLIENT_ID and DATABRICKS_CLIENT_SECRET are required "
-            "for App SP request logging"
+            "for App SP request logging. Locally set DATABRICKS_TOKEN instead."
         )
 
     try:

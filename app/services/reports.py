@@ -1,17 +1,14 @@
-"""Assemble FPVR report payloads from edladmin tables via OBO SQL."""
+"""Assemble FPVR report payloads from configured tables or views via OBO SQL."""
 
 from __future__ import annotations
 
-import re
 from typing import Any
 
 from app.core.config import get_settings
 from app.core.sql import SqlStatementError, WarehouseNotConfiguredError, execute_obo_statement
 from app.models.fpvr import REPORT_TITLES, ReportCode, RequestStatusValue
-from app.models.report_contract import REPORT_SOURCES, SECTION_COLUMNS, SECTION_TABLES
+from app.models.report_contract import REPORT_SOURCES, SECTION_COLUMNS
 from app.models.subject_identity import SubjectIdentity
-
-_SCHEMA = re.compile(r"^[A-Za-z0-9_]+\.[A-Za-z0-9_]+$")
 
 
 class ReportQueryError(RuntimeError):
@@ -19,24 +16,11 @@ class ReportQueryError(RuntimeError):
 
 
 class ReportAssembler:
-    """Build FPVR JSON from Unity Catalog as the calling user.
+    """Build FPVR JSON from configured Unity Catalog tables or views."""
 
-    Attributes:
-        _schema: Fully qualified ``catalog.schema``.
-    """
-
-    def __init__(self, catalog_schema: str) -> None:
-        """Initialize the assembler.
-
-        Args:
-            catalog_schema: ``catalog.schema`` holding the subject tables.
-
-        Raises:
-            ValueError: If ``catalog_schema`` is not two identifier parts.
-        """
-        if not _SCHEMA.match(catalog_schema):
-            raise ValueError(f"Invalid catalog schema: {catalog_schema!r}")
-        self._schema = catalog_schema
+    def __init__(self) -> None:
+        """Initialize the assembler from process settings."""
+        self._settings = get_settings()
 
     def assemble(
         self, report_code: ReportCode, subject: SubjectIdentity, *, user_token: str
@@ -109,7 +93,7 @@ class ReportAssembler:
         Raises:
             ReportQueryError: If the statement fails.
         """
-        table = f"{self._schema}.{SECTION_TABLES[source]}"
+        table = self._settings.source_table(source)
         columns = list(SECTION_COLUMNS[source])
         sql = f"SELECT {', '.join(columns)} FROM {table} WHERE SSN = :ssn"
         try:
@@ -135,5 +119,5 @@ def get_report_assembler() -> ReportAssembler:
     """
     global _assembler
     if _assembler is None:
-        _assembler = ReportAssembler(get_settings().catalog_schema)
+        _assembler = ReportAssembler()
     return _assembler

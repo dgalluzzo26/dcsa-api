@@ -19,3 +19,13 @@ env:
     value: "dcsa_catalog.dcsa_api.api_request_log"
   - name: DCSA_CATALOG_SCHEMA
     value: "dcsa_catalog.edladmin"
+  - name: DCSA_TABLE_IDENTITY
+    value: "subject_identity"
+  - name: DCSA_TABLE_STATUS
+    value: "subject_status"
+  - name: DCSA_TABLE_CHECK
+    value: "subject_check"
+  - name: DCSA_TABLE_ACTIVITY
+    value: "subject_activity"
+  - name: DCSA_TABLE_SIGNAL
+    value: "subject_signal"

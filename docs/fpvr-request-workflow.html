@@ -170,7 +170,7 @@
       <tr>
         <td>2. Request</td>
         <td class="mono">POST /api/v1/requests</td>
-        <td>201 + request_id (unique subject)</td>
+        <td>200 + request_id (unique subject)</td>
         <td>409 candidates without SSN, or 404 none</td>
       </tr>
       <tr>
@@ -200,7 +200,7 @@
     </div>
     <div class="card">
       <div class="card-h">Official request <span class="pill ok">1 match</span></div>
-      <p>HTTP 201. App SP inserts a request row, generates request_id, stores report code, caller identity, timestamps. Status starts pending or ready depending on whether the report is in-lake.</p>
+      <p>HTTP 200. App SP inserts a request row, generates request_id, stores report code, caller identity, timestamps. Status starts pending or ready depending on whether the report is in-lake.</p>
     </div>
   </div>
 

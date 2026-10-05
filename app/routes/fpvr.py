@@ -67,7 +67,7 @@ def _service() -> FPVRRequestService:
 @router.post(
     "",
     response_model=FPVRRequestAccepted,
-    status_code=201,
+    status_code=200,
     summary="Open an official FPVR request",
     responses=_ERROR_RESPONSES,
 )

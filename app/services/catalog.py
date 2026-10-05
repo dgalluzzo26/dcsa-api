@@ -10,7 +10,6 @@ from app.core.sql import WarehouseNotConfiguredError, workspace_host
 from app.models.fpvr import ReportCode
 from app.models.report_contract import (
     SECTION_ROW_MODELS,
-    SECTION_TABLES,
     ApiCatalog,
     CatalogApi,
     CatalogField,
@@ -143,7 +142,6 @@ def build_catalog() -> ApiCatalog:
     Returns:
         Typed catalog of APIs, scenarios, and per-report schemas.
     """
-    schema = get_settings().catalog_schema
     reports = []
     for code in ReportCode:
         sources = list(REPORT_SOURCES[code])
@@ -152,7 +150,7 @@ def build_catalog() -> ApiCatalog:
                 report_code=code,
                 title=report_title(code),
                 sources=sources,
-                tables=[f"{schema}.{SECTION_TABLES[s]}" for s in sources],
+                tables=[get_settings().source_table(s) for s in sources],
                 readiness=REPORT_READINESS[code],
                 data_fields={s: _fields_for_section(s) for s in sources},
                 example_response=_example_envelope(code),
@@ -235,14 +233,14 @@ def build_catalog() -> ApiCatalog:
             scenarios=[
                 CatalogScenario(
                     id="unique_match",
-                    http_status=201,
+                    http_status=200,
                     summary="Exactly one subject matched; request_id issued.",
                     request=create_body,
                     response=accepted,
                 ),
                 CatalogScenario(
                     id="candidate_resubmit",
-                    http_status=201,
+                    http_status=200,
                     summary="Caller resubmits an opaque candidate_id from a prior 409.",
                     request={"report_code": "FPVR-6", "candidate_id": _SAMPLE_CANDIDATE_ID},
                     response={**accepted, "resolution_method": "candidate_id"},
