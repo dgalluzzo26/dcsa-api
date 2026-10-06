@@ -6,14 +6,17 @@ API routes under ``/api``.
 
 from __future__ import annotations
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from app import __version__
 from app.core.config import get_settings
+from app.core.http_logging import RequestIdMiddleware, configure_logging, current_request_id
 from app.routes import router
 from app.routes.catalog import help_page
 
+configure_logging()
 settings = get_settings()
 
 app = FastAPI(
@@ -54,6 +57,29 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.add_middleware(RequestIdMiddleware)
+
+
+@app.exception_handler(HTTPException)
+async def http_exception_handler(request: Request, exc: HTTPException) -> JSONResponse:
+    """Attach ``request_id`` to HTTP error bodies for log correlation.
+
+    Args:
+        request: Incoming request.
+        exc: Raised HTTP error.
+
+    Returns:
+        JSON body with ``detail`` and ``request_id``.
+    """
+    rid = current_request_id(request)
+    detail = exc.detail
+    if isinstance(detail, dict):
+        content: dict = {**detail, "request_id": rid}
+    else:
+        content = {"detail": detail, "request_id": rid}
+    headers = dict(exc.headers or {})
+    headers["X-Request-Id"] = rid
+    return JSONResponse(status_code=exc.status_code, content=content, headers=headers)
 
 app.include_router(router, prefix="/api")
 app.add_api_route("/help", help_page, methods=["GET"], include_in_schema=False)
