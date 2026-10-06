@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from datetime import date, datetime
 from enum import Enum
-from typing import Annotated, Any
+from typing import Any
 
-from pydantic import AliasChoices, BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class ReportCode(str, Enum):
@@ -57,34 +57,41 @@ class FPVRRequestCreate(BaseModel):
 
     model_config = ConfigDict(populate_by_name=True)
 
-    report_code: Annotated[
-        ReportCode,
-        Field(
-            validation_alias=AliasChoices("report_code", "reportCode", "REPORT_CODE"),
-            examples=["FPVR-6"],
-        ),
-    ]
-    ssn: Annotated[
-        str | None,
-        Field(validation_alias=AliasChoices("ssn", "SSN")),
-    ] = None
-    first_name: Annotated[
-        str | None,
-        Field(validation_alias=AliasChoices("first_name", "FIRST_NAME", "First_Name")),
-    ] = None
-    last_name: Annotated[
-        str | None,
-        Field(validation_alias=AliasChoices("last_name", "LAST_NAME", "Last_Name")),
-    ] = None
-    date_of_birth: Annotated[
-        date | None,
-        Field(
-            validation_alias=AliasChoices(
-                "date_of_birth", "DATE_OF_BIRTH", "Date_OF_BIRTH"
-            )
-        ),
-    ] = None
+    report_code: ReportCode = Field(examples=["FPVR-6"])
+    ssn: str | None = None
+    first_name: str | None = None
+    last_name: str | None = None
+    date_of_birth: date | None = None
     candidate_id: str | None = Field(default=None, examples=["abc.def"])
+
+    @model_validator(mode="before")
+    @classmethod
+    def normalize_input_keys(cls, value: Any) -> Any:
+        """Normalize accepted request-key variants without schema aliases.
+
+        Args:
+            value: Raw request body.
+
+        Returns:
+            Body with alternate keys copied to canonical snake_case names.
+        """
+        if not isinstance(value, dict):
+            return value
+        normalized = dict(value)
+        aliases = {
+            "report_code": ("reportCode", "REPORT_CODE"),
+            "ssn": ("SSN",),
+            "first_name": ("FIRST_NAME", "First_Name"),
+            "last_name": ("LAST_NAME", "Last_Name"),
+            "date_of_birth": ("DATE_OF_BIRTH", "Date_OF_BIRTH"),
+        }
+        for canonical, alternatives in aliases.items():
+            if canonical not in normalized:
+                for alternative in alternatives:
+                    if alternative in normalized:
+                        normalized[canonical] = normalized[alternative]
+                        break
+        return normalized
 
     @model_validator(mode="after")
     def require_identity(self) -> "FPVRRequestCreate":

@@ -8,9 +8,9 @@ contract matches the source table.
 from __future__ import annotations
 
 from datetime import date, datetime
-from typing import Annotated
+from typing import Any
 
-from pydantic import AliasChoices, BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class SubjectIdentitySearch(BaseModel):
@@ -30,37 +30,39 @@ class SubjectIdentitySearch(BaseModel):
 
     model_config = ConfigDict(populate_by_name=True)
 
-    ssn: Annotated[
-        str | None,
-        Field(
-            validation_alias=AliasChoices("ssn", "SSN"),
-            examples=["976782971"],
-        ),
-    ] = None
-    first_name: Annotated[
-        str | None,
-        Field(
-            validation_alias=AliasChoices("first_name", "FIRST_NAME", "First_Name"),
-            examples=["Kevin"],
-        ),
-    ] = None
-    last_name: Annotated[
-        str | None,
-        Field(
-            validation_alias=AliasChoices("last_name", "LAST_NAME", "Last_Name"),
-            examples=["Jackson"],
-        ),
-    ] = None
-    date_of_birth: Annotated[
-        date | None,
-        Field(
-            validation_alias=AliasChoices(
-                "date_of_birth", "DATE_OF_BIRTH", "Date_OF_BIRTH"
-            ),
-            examples=["1969-02-10"],
-        ),
-    ] = None
+    ssn: str | None = Field(default=None, examples=["976782971"])
+    first_name: str | None = Field(default=None, examples=["Kevin"])
+    last_name: str | None = Field(default=None, examples=["Jackson"])
+    date_of_birth: date | None = Field(default=None, examples=["1969-02-10"])
     limit: int = Field(default=50, ge=1, le=200)
+
+    @model_validator(mode="before")
+    @classmethod
+    def normalize_input_keys(cls, value: Any) -> Any:
+        """Normalize accepted request-key variants without schema aliases.
+
+        Args:
+            value: Raw search body.
+
+        Returns:
+            Body with alternate keys copied to canonical snake_case names.
+        """
+        if not isinstance(value, dict):
+            return value
+        normalized = dict(value)
+        aliases = {
+            "ssn": ("SSN",),
+            "first_name": ("FIRST_NAME", "First_Name"),
+            "last_name": ("LAST_NAME", "Last_Name"),
+            "date_of_birth": ("DATE_OF_BIRTH", "Date_OF_BIRTH"),
+        }
+        for canonical, alternatives in aliases.items():
+            if canonical not in normalized:
+                for alternative in alternatives:
+                    if alternative in normalized:
+                        normalized[canonical] = normalized[alternative]
+                        break
+        return normalized
 
     @model_validator(mode="after")
     def require_one_filter(self) -> "SubjectIdentitySearch":
