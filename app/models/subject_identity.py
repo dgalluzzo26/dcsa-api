@@ -8,6 +8,7 @@ contract matches the source table.
 from __future__ import annotations
 
 from datetime import date, datetime
+from typing import Annotated
 
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field, model_validator
 
@@ -29,26 +30,36 @@ class SubjectIdentitySearch(BaseModel):
 
     model_config = ConfigDict(populate_by_name=True)
 
-    ssn: str | None = Field(
-        default=None,
-        validation_alias=AliasChoices("ssn", "SSN"),
-        examples=["976782971"],
-    )
-    first_name: str | None = Field(
-        default=None,
-        validation_alias=AliasChoices("first_name", "FIRST_NAME", "First_Name"),
-        examples=["Kevin"],
-    )
-    last_name: str | None = Field(
-        default=None,
-        validation_alias=AliasChoices("last_name", "LAST_NAME", "Last_Name"),
-        examples=["Jackson"],
-    )
-    date_of_birth: date | None = Field(
-        default=None,
-        validation_alias=AliasChoices("date_of_birth", "DATE_OF_BIRTH", "Date_OF_BIRTH"),
-        examples=["1969-02-10"],
-    )
+    ssn: Annotated[
+        str | None,
+        Field(
+            validation_alias=AliasChoices("ssn", "SSN"),
+            examples=["976782971"],
+        ),
+    ] = None
+    first_name: Annotated[
+        str | None,
+        Field(
+            validation_alias=AliasChoices("first_name", "FIRST_NAME", "First_Name"),
+            examples=["Kevin"],
+        ),
+    ] = None
+    last_name: Annotated[
+        str | None,
+        Field(
+            validation_alias=AliasChoices("last_name", "LAST_NAME", "Last_Name"),
+            examples=["Jackson"],
+        ),
+    ] = None
+    date_of_birth: Annotated[
+        date | None,
+        Field(
+            validation_alias=AliasChoices(
+                "date_of_birth", "DATE_OF_BIRTH", "Date_OF_BIRTH"
+            ),
+            examples=["1969-02-10"],
+        ),
+    ] = None
     limit: int = Field(default=50, ge=1, le=200)
 
     @model_validator(mode="after")

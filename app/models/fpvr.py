@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import date, datetime
 from enum import Enum
-from typing import Any
+from typing import Annotated, Any
 
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field, model_validator
 
@@ -57,23 +57,33 @@ class FPVRRequestCreate(BaseModel):
 
     model_config = ConfigDict(populate_by_name=True)
 
-    report_code: ReportCode = Field(
-        validation_alias=AliasChoices("report_code", "reportCode", "REPORT_CODE"),
-        examples=["FPVR-6"],
-    )
-    ssn: str | None = Field(default=None, validation_alias=AliasChoices("ssn", "SSN"))
-    first_name: str | None = Field(
-        default=None,
-        validation_alias=AliasChoices("first_name", "FIRST_NAME", "First_Name"),
-    )
-    last_name: str | None = Field(
-        default=None,
-        validation_alias=AliasChoices("last_name", "LAST_NAME", "Last_Name"),
-    )
-    date_of_birth: date | None = Field(
-        default=None,
-        validation_alias=AliasChoices("date_of_birth", "DATE_OF_BIRTH", "Date_OF_BIRTH"),
-    )
+    report_code: Annotated[
+        ReportCode,
+        Field(
+            validation_alias=AliasChoices("report_code", "reportCode", "REPORT_CODE"),
+            examples=["FPVR-6"],
+        ),
+    ]
+    ssn: Annotated[
+        str | None,
+        Field(validation_alias=AliasChoices("ssn", "SSN")),
+    ] = None
+    first_name: Annotated[
+        str | None,
+        Field(validation_alias=AliasChoices("first_name", "FIRST_NAME", "First_Name")),
+    ] = None
+    last_name: Annotated[
+        str | None,
+        Field(validation_alias=AliasChoices("last_name", "LAST_NAME", "Last_Name")),
+    ] = None
+    date_of_birth: Annotated[
+        date | None,
+        Field(
+            validation_alias=AliasChoices(
+                "date_of_birth", "DATE_OF_BIRTH", "Date_OF_BIRTH"
+            )
+        ),
+    ] = None
     candidate_id: str | None = Field(default=None, examples=["abc.def"])
 
     @model_validator(mode="after")
