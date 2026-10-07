@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException, Request, status
+from fastapi import APIRouter, HTTPException, Request, Security, status
 from fastapi.responses import JSONResponse
 
 from app.core.candidates import CandidateTokenError
-from app.core.obo import get_obo_token
+from app.core.obo import bearer_scheme, get_obo_token
 from app.core.sql import WarehouseNotConfiguredError
 from app.models import ErrorResponse
 from app.models.fpvr import (
@@ -28,7 +28,11 @@ from app.services.reports import ReportQueryError
 from app.services.request_log import RequestLogError
 from app.services.subject_identity import SubjectIdentityQueryError
 
-router = APIRouter(prefix="/v1/requests", tags=["fpvr-requests"])
+router = APIRouter(
+    prefix="/v1/requests",
+    tags=["fpvr-requests"],
+    dependencies=[Security(bearer_scheme)],
+)
 
 _ERROR_RESPONSES = {
     400: {"model": ErrorResponse},
@@ -101,9 +105,7 @@ def create_request(request: Request, body: FPVRRequestCreate):
     except WarehouseNotConfiguredError as e:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(e)) from e
     except (SubjectIdentityQueryError, ReportQueryError, RequestLogError) as e:
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY, detail="FPVR request failed"
-        ) from e
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(e)) from e
 
 
 @router.get(
@@ -140,9 +142,7 @@ def get_request_status(request: Request, request_id: str) -> FPVRRequestStatus:
     except WarehouseNotConfiguredError as e:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(e)) from e
     except (SubjectIdentityQueryError, ReportQueryError, RequestLogError) as e:
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY, detail="Status lookup failed"
-        ) from e
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(e)) from e
 
 
 @router.get(
@@ -183,6 +183,4 @@ def get_request_response(request: Request, request_id: str) -> FPVRReportRespons
     except WarehouseNotConfiguredError as e:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(e)) from e
     except (SubjectIdentityQueryError, ReportQueryError, RequestLogError) as e:
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY, detail="Report query failed"
-        ) from e
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(e)) from e

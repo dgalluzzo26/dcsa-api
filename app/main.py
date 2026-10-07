@@ -30,6 +30,7 @@ app = FastAPI(
     ),
     version=__version__,
     contact={"name": "DCSA API"},
+    swagger_ui_parameters={"persistAuthorization": True},
     openapi_tags=[
         {"name": "system", "description": "Health and identity"},
         {
@@ -42,7 +43,7 @@ app = FastAPI(
         },
         {
             "name": "catalog",
-            "description": "Exact request/response schemas and scenarios for FPVR-1 through FPVR-7",
+            "description": "Exact request/response schemas and scenarios for configured reports",
         },
     ],
 )

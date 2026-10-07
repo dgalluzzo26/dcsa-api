@@ -1,0 +1,218 @@
+# Example only: the application does not load this file.
+#
+# This sketches a configuration-driven replacement for the settings and report
+# contract currently defined in Python. A future loader should validate this
+# entire document at startup and fail fast when it contains invalid references.
+
+version: 1
+
+application:
+  name: dcsa-api
+  environment: dev
+
+databricks:
+  warehouse_id: c56ad4dc84dcac90
+  default_catalog_schema: dcsa_catalog.edladmin
+  request_log_table: dcsa_catalog.dcsa_api.api_request_log
+
+# Sources are reusable across reports. A table may be an unqualified name,
+# schema.table, or catalog.schema.table. Every identifier (including columns)
+# must be validated against a strict allowlist before being placed in SQL.
+sources:
+  identity:
+    table: subject_identity
+    filter:
+      column: SSN
+      parameter: subject_ssn
+    columns:
+      - SSN
+      - FIRST_NAME
+      - LAST_NAME
+      - DATE_OF_BIRTH
+      - PLACE_OF_BIRTH
+      - SEX
+      - CITIZENSHIP
+      - MARITAL_STATUS
+      - UPDATED_TS
+      - RECORD_VERSION
+    omit_from_output:
+      - SSN
+
+  status:
+    table: subject_status
+    filter:
+      column: SSN
+      parameter: subject_ssn
+    columns:
+      - SSN
+      - ORG_CODE
+      - POSITION_TITLE
+      - DUTY_LOCATION
+      - RISK_TIER
+      - ELIGIBILITY_LEVEL
+      - STATUS_CODE
+      - STATUS_EFFECTIVE_DATE
+      - UPDATED_TS
+      - RECORD_VERSION
+    omit_from_output:
+      - SSN
+
+  check:
+    table: subject_check
+    filter:
+      column: SSN
+      parameter: subject_ssn
+    columns:
+      - CHECK_ID
+      - SSN
+      - LOCATION_CODE
+      - CHECK_TYPE
+      - RESULT_CODE
+      - RESULT_SCORE
+      - CHECKED_TS
+      - LOAD_SEQ
+    omit_from_output:
+      - SSN
+
+  activity:
+    table: subject_activity
+    filter:
+      column: SSN
+      parameter: subject_ssn
+    columns:
+      - ACTIVITY_ID
+      - SSN
+      - LOCATION_CODE
+      - ACTIVITY_TYPE
+      - DETAIL
+      - EVENT_TS
+      - LOAD_SEQ
+    omit_from_output:
+      - SSN
+
+  signal:
+    table: subject_signal
+    filter:
+      column: SSN
+      parameter: subject_ssn
+    columns:
+      - SIGNAL_ID
+      - SSN
+      - LOCATION_CODE
+      - SIGNAL_TYPE
+      - SEVERITY
+      - SIGNAL_TS
+      - LOAD_SEQ
+    omit_from_output:
+      - SSN
+
+# Report sections become keys in the response data object. Readiness uses a
+# small, validated vocabulary rather than executable expressions or raw SQL.
+reports:
+  FPVR-1:
+    name: Application Bundle
+    sections:
+      identity:
+        source: identity
+      status:
+        source: status
+      check:
+        source: check
+    readiness:
+      mode: always
+
+  FPVR-2:
+    name: Investigation Summary
+    sections:
+      check:
+        source: check
+      activity:
+        source: activity
+    readiness:
+      mode: any_section_non_empty
+      sections:
+        - check
+        - activity
+
+  FPVR-3:
+    name: Adjudication Summary
+    sections:
+      status:
+        source: status
+      check:
+        source: check
+    readiness:
+      mode: section_non_empty
+      section: status
+
+  FPVR-4:
+    name: CV Summary
+    sections:
+      identity:
+        source: identity
+      status:
+        source: status
+    readiness:
+      mode: always
+
+  FPVR-5:
+    name: CV Alerts
+    sections:
+      signal:
+        source: signal
+    readiness:
+      mode: always
+
+  FPVR-6:
+    name: Human Capital
+    sections:
+      identity:
+        source: identity
+      status:
+        source: status
+    readiness:
+      mode: always
+
+  FPVR-7:
+    name: Favorable to Onboard
+    sections:
+      status:
+        source: status
+    readiness:
+      mode: field_present
+      section: status
+      field: STATUS_CODE
+
+# New-report template (uncomment and customize):
+#
+#  sources:
+#    training:
+#      table: subject_training
+#      filter:
+#        column: SSN
+#        parameter: subject_ssn
+#      columns:
+#        - SSN
+#        - COURSE_NAME
+#        - COMPLETED_DATE
+#      omit_from_output:
+#        - SSN
+#
+#  reports:
+#    FPVR-8:
+#      name: Training History
+#      sections:
+#        training:
+#          source: training
+#      readiness:
+#        mode: section_non_empty
+#        section: training
+#
+# Future-loader guardrails:
+# - Validate this document against a versioned schema before serving requests.
+# - Require unique source names, report codes, and section names.
+# - Reject unknown source references, columns, and readiness modes.
+# - Allow only validated catalog/schema/table/column identifiers.
+# - Bind filter values as SQL parameters; never interpolate user values.
+# - Do not permit arbitrary SQL, joins, predicates, or expressions in YAML.
+# - Fail application startup on invalid configuration instead of skipping it.

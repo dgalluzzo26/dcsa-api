@@ -14,7 +14,6 @@ from app.models.fpvr import (
     FPVRRequestAccepted,
     FPVRRequestCreate,
     FPVRRequestStatus,
-    ReportCode,
     RequestStatusValue,
     SubjectCandidate,
 )
@@ -78,7 +77,6 @@ __all__ = [
     "FPVRRequestStatus",
     "HealthResponse",
     "MeResponse",
-    "ReportCode",
     "RequestStatusValue",
     "SubjectCandidate",
     "SubjectIdentity",
