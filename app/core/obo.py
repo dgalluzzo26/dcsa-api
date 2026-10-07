@@ -3,6 +3,17 @@
 from __future__ import annotations
 
 from fastapi import HTTPException, Request, status
+from fastapi.security import HTTPBearer
+
+bearer_scheme = HTTPBearer(
+    auto_error=False,
+    scheme_name="DatabricksUserToken",
+    description=(
+        "Databricks user OAuth token for local runs, e.g. "
+        "`databricks auth token --profile govfood-dsca | jq -r .access_token`. "
+        "Ignored on Databricks Apps, which forwards x-forwarded-access-token."
+    ),
+)
 
 
 def get_obo_token(request: Request) -> str:
