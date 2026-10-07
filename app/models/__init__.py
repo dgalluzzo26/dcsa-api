@@ -62,9 +62,11 @@ class ErrorResponse(BaseModel):
 
     Attributes:
         detail: Human-readable error message.
+        request_id: Correlation id also sent as ``X-Request-Id``.
     """
 
     detail: str
+    request_id: str | None = None
 
 
 __all__ = [

@@ -6,7 +6,30 @@ from datetime import date, datetime
 from enum import Enum
 from typing import Any
 
-from pydantic import AliasChoices, BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+
+class ReportCode(str, Enum):
+    """FPVR contract report requested by the caller."""
+
+    FPVR_1 = "FPVR-1"
+    FPVR_2 = "FPVR-2"
+    FPVR_3 = "FPVR-3"
+    FPVR_4 = "FPVR-4"
+    FPVR_5 = "FPVR-5"
+    FPVR_6 = "FPVR-6"
+    FPVR_7 = "FPVR-7"
+
+
+REPORT_TITLES: dict[ReportCode, str] = {
+    ReportCode.FPVR_1: "Application Bundle",
+    ReportCode.FPVR_2: "Investigation Summary",
+    ReportCode.FPVR_3: "Adjudication Summary",
+    ReportCode.FPVR_4: "CV Summary",
+    ReportCode.FPVR_5: "CV Alerts",
+    ReportCode.FPVR_6: "Human Capital",
+    ReportCode.FPVR_7: "Favorable to Onboard",
+}
 
 
 class RequestStatusValue(str, Enum):
@@ -34,25 +57,41 @@ class FPVRRequestCreate(BaseModel):
 
     model_config = ConfigDict(populate_by_name=True)
 
-    report_code: str = Field(
-        min_length=1,
-        validation_alias=AliasChoices("report_code", "reportCode", "REPORT_CODE"),
-        examples=["FPVR-6"],
-    )
-    ssn: str | None = Field(default=None, validation_alias=AliasChoices("ssn", "SSN"))
-    first_name: str | None = Field(
-        default=None,
-        validation_alias=AliasChoices("first_name", "FIRST_NAME", "First_Name"),
-    )
-    last_name: str | None = Field(
-        default=None,
-        validation_alias=AliasChoices("last_name", "LAST_NAME", "Last_Name"),
-    )
-    date_of_birth: date | None = Field(
-        default=None,
-        validation_alias=AliasChoices("date_of_birth", "DATE_OF_BIRTH", "Date_OF_BIRTH"),
-    )
+    report_code: ReportCode = Field(examples=["FPVR-6"])
+    ssn: str | None = None
+    first_name: str | None = None
+    last_name: str | None = None
+    date_of_birth: date | None = None
     candidate_id: str | None = Field(default=None, examples=["abc.def"])
+
+    @model_validator(mode="before")
+    @classmethod
+    def normalize_input_keys(cls, value: Any) -> Any:
+        """Normalize accepted request-key variants without schema aliases.
+
+        Args:
+            value: Raw request body.
+
+        Returns:
+            Body with alternate keys copied to canonical snake_case names.
+        """
+        if not isinstance(value, dict):
+            return value
+        normalized = dict(value)
+        aliases = {
+            "report_code": ("reportCode", "REPORT_CODE"),
+            "ssn": ("SSN",),
+            "first_name": ("FIRST_NAME", "First_Name"),
+            "last_name": ("LAST_NAME", "Last_Name"),
+            "date_of_birth": ("DATE_OF_BIRTH", "Date_OF_BIRTH"),
+        }
+        for canonical, alternatives in aliases.items():
+            if canonical not in normalized:
+                for alternative in alternatives:
+                    if alternative in normalized:
+                        normalized[canonical] = normalized[alternative]
+                        break
+        return normalized
 
     @model_validator(mode="after")
     def require_identity_and_report(self) -> "FPVRRequestCreate":

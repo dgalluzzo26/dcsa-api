@@ -6,7 +6,12 @@ from fastapi import APIRouter, HTTPException, Request, Security, status
 from fastapi.responses import JSONResponse
 
 from app.core.candidates import CandidateTokenError
+<<<<<<< HEAD
 from app.core.obo import bearer_scheme, get_obo_token
+=======
+from app.core.http_logging import current_request_id, gateway_error, log_failure
+from app.core.obo import get_obo_token
+>>>>>>> origin/main
 from app.core.sql import WarehouseNotConfiguredError
 from app.models import ErrorResponse
 from app.models.fpvr import (
@@ -99,13 +104,36 @@ def create_request(request: Request, body: FPVRRequestCreate):
     except SubjectNotFoundError as e:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e)) from e
     except AmbiguousSubjectError as e:
+        content = e.response.model_dump(mode="json")
+        content["request_id"] = current_request_id(request)
         return JSONResponse(
-            status_code=status.HTTP_409_CONFLICT, content=e.response.model_dump(mode="json")
+            status_code=status.HTTP_409_CONFLICT,
+            content=content,
+            headers={"X-Request-Id": current_request_id(request)},
         )
     except WarehouseNotConfiguredError as e:
+        log_failure(request, e, step="warehouse", report_code=body.report_code.value)
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(e)) from e
+<<<<<<< HEAD
     except (SubjectIdentityQueryError, ReportQueryError, RequestLogError) as e:
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(e)) from e
+=======
+    except SubjectIdentityQueryError as e:
+        raise gateway_error(
+            request, e, detail="FPVR request failed", step="identity_sql",
+            report_code=body.report_code.value,
+        ) from e
+    except ReportQueryError as e:
+        raise gateway_error(
+            request, e, detail="FPVR request failed", step="report_sql",
+            report_code=body.report_code.value,
+        ) from e
+    except RequestLogError as e:
+        raise gateway_error(
+            request, e, detail="FPVR request failed", step="request_log",
+            report_code=body.report_code.value,
+        ) from e
+>>>>>>> origin/main
 
 
 @router.get(
@@ -140,9 +168,28 @@ def get_request_status(request: Request, request_id: str) -> FPVRRequestStatus:
     except OfficialRequestNotFoundError as e:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Request not found") from e
     except WarehouseNotConfiguredError as e:
+        log_failure(request, e, step="warehouse", fpvr_request_id=request_id)
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(e)) from e
+<<<<<<< HEAD
     except (SubjectIdentityQueryError, ReportQueryError, RequestLogError) as e:
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(e)) from e
+=======
+    except SubjectIdentityQueryError as e:
+        raise gateway_error(
+            request, e, detail="Status lookup failed", step="identity_sql",
+            fpvr_request_id=request_id,
+        ) from e
+    except ReportQueryError as e:
+        raise gateway_error(
+            request, e, detail="Status lookup failed", step="report_sql",
+            fpvr_request_id=request_id,
+        ) from e
+    except RequestLogError as e:
+        raise gateway_error(
+            request, e, detail="Status lookup failed", step="request_log",
+            fpvr_request_id=request_id,
+        ) from e
+>>>>>>> origin/main
 
 
 @router.get(
@@ -181,6 +228,25 @@ def get_request_response(request: Request, request_id: str) -> FPVRReportRespons
             detail="Request is not ready",
         ) from e
     except WarehouseNotConfiguredError as e:
+        log_failure(request, e, step="warehouse", fpvr_request_id=request_id)
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(e)) from e
+<<<<<<< HEAD
     except (SubjectIdentityQueryError, ReportQueryError, RequestLogError) as e:
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(e)) from e
+=======
+    except SubjectIdentityQueryError as e:
+        raise gateway_error(
+            request, e, detail="Report query failed", step="identity_sql",
+            fpvr_request_id=request_id,
+        ) from e
+    except ReportQueryError as e:
+        raise gateway_error(
+            request, e, detail="Report query failed", step="report_sql",
+            fpvr_request_id=request_id,
+        ) from e
+    except RequestLogError as e:
+        raise gateway_error(
+            request, e, detail="Report query failed", step="request_log",
+            fpvr_request_id=request_id,
+        ) from e
+>>>>>>> origin/main
