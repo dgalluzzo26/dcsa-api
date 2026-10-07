@@ -7,6 +7,7 @@ application:
   environment: dev
 
 databricks:
+  host: https://govfood-dsca.cloud.databricks.us
   warehouse_id: c56ad4dc84dcac90
   default_catalog_schema: dcsa_catalog.edladmin
   request_log_table: dcsa_catalog.dcsa_api.api_request_log
