@@ -11,12 +11,8 @@ from datetime import date
 from fastapi import APIRouter, HTTPException, Query, Request, Security, status
 from pydantic import ValidationError
 
-<<<<<<< HEAD
-from app.core.obo import bearer_scheme, get_obo_token
-=======
 from app.core.http_logging import gateway_error, log_failure
-from app.core.obo import get_obo_token
->>>>>>> origin/main
+from app.core.obo import get_obo_token, bearer_scheme
 from app.core.sql import WarehouseNotConfiguredError
 from app.models import ErrorResponse, SubjectIdentityListResponse, SubjectIdentitySearch
 from app.services import SubjectIdentityQueryError, get_subject_identity_service
@@ -56,13 +52,9 @@ def _search(request: Request, query: SubjectIdentitySearch) -> SubjectIdentityLi
         log_failure(request, e, step="warehouse")
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(e)) from e
     except SubjectIdentityQueryError as e:
-<<<<<<< HEAD
-        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(e)) from e
-=======
         raise gateway_error(
             request, e, detail="Subject identity query failed", step="identity_sql"
         ) from e
->>>>>>> origin/main
 
 
 @router.get(

@@ -22,19 +22,23 @@ _cached_token: str | None = None
 _cached_until: float = 0.0
 
 
-def get_app_sp_token() -> str:
+def get_app_sp_token(*, fallback_token: str | None = None) -> str:
     """Return an OAuth access token for the Databricks App service principal.
 
     Databricks Apps inject ``DATABRICKS_CLIENT_ID`` and
     ``DATABRICKS_CLIENT_SECRET``. The token is cached until shortly before
-    expiry.
+    expiry. Locally, ``DATABRICKS_TOKEN`` or ``fallback_token`` (the caller
+    OBO token) is used when client credentials are absent.
+
+    Args:
+        fallback_token: Caller token used when App SP credentials and
+            ``DATABRICKS_TOKEN`` are not set.
 
     Returns:
-        A Bearer access token for App SP SQL (request log only).
+        A Bearer access token for App SP SQL or Jobs API calls.
 
     Raises:
-        AppPrincipalError: If client credentials are missing or the token
-            endpoint rejects the request.
+        AppPrincipalError: If no usable token can be obtained.
     """
     global _cached_token, _cached_until
     now = time.time()
@@ -48,9 +52,12 @@ def get_app_sp_token() -> str:
         local_token = os.getenv("DATABRICKS_TOKEN", "").strip()
         if local_token:
             return local_token
+        if fallback_token and fallback_token.strip():
+            return fallback_token.strip()
         raise AppPrincipalError(
             "DATABRICKS_CLIENT_ID and DATABRICKS_CLIENT_SECRET are required "
-            "for App SP request logging. Locally set DATABRICKS_TOKEN instead."
+            "to start pending-report jobs as the app service principal. "
+            "Locally set DATABRICKS_TOKEN instead."
         )
 
     try:
