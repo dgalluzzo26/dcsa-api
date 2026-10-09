@@ -169,6 +169,9 @@ class FPVRReportResponse(BaseModel):
 class FPVRRequestAccepted(BaseModel):
     """Response when a unique subject is resolved and an official request is logged.
 
+    POST /requests and GET /requests/{id} return this same body. Status lives
+    here; there is no separate status route.
+
     Attributes:
         request_id: Handle used to GET the request.
         status: pending, ready, or failed.

@@ -11,12 +11,8 @@ from datetime import date
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from pydantic import ValidationError
 
-<<<<<<< HEAD
 from app.core.http_logging import gateway_error, log_failure
-from app.core.obo import get_obo_token
-=======
 from app.core.obo import bearer_scheme, get_obo_token
->>>>>>> bbbe80f (rework rest endpoints)
 from app.core.sql import WarehouseNotConfiguredError
 from app.models import ErrorResponse, SubjectIdentityListResponse, SubjectIdentitySearch
 from app.services import SubjectIdentityQueryError, get_subject_identity_service
