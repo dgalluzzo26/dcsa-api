@@ -150,63 +150,37 @@ class AmbiguousSubjectResponse(BaseModel):
     total: int
 
 
-class FPVRRequestAccepted(BaseModel):
-    """Response when a unique subject is resolved and an official request is logged.
-
-    Attributes:
-        request_id: Handle used for status and response calls.
-        report_code: Requested report.
-        report_title: Display name of the report.
-        status: pending, ready, or failed.
-        requested_at: Official request timestamp (UTC ISO).
-        requested_by: Caller identity stored on the log row.
-        resolution_method: unique_match or candidate_id.
-    """
-
-    request_id: str
-    report_code: ReportCode
-    report_title: str
-    status: RequestStatusValue
-    requested_at: str
-    requested_by: str | None = None
-    resolution_method: str
-
-
-class FPVRRequestStatus(BaseModel):
-    """Status of an official request.
-
-    Attributes:
-        request_id: Request handle.
-        report_code: Requested report.
-        report_title: Display name.
-        status: pending, ready, or failed.
-        requested_at: When the request was logged.
-        ready_at: When the payload became servable, if ready.
-        requested_by: Caller identity.
-    """
-
-    request_id: str
-    report_code: ReportCode
-    report_title: str
-    status: RequestStatusValue
-    requested_at: str
-    ready_at: str | None = None
-    requested_by: str | None = None
-
-
 class FPVRReportResponse(BaseModel):
     """Report payload for a ready request.
 
     Attributes:
-        request_id: Request handle.
-        report_code: Report produced.
-        report_title: Display name.
+        code: Report produced.
+        title: Display name.
         subject: Identity fields excluding SSN.
         data: Report-specific rows assembled from Unity Catalog.
     """
 
-    request_id: str
-    report_code: ReportCode
-    report_title: str
+    code: ReportCode
+    title: str
     subject: dict[str, Any]
     data: dict[str, Any]
+
+
+class FPVRRequestAccepted(BaseModel):
+    """Response when a unique subject is resolved and an official request is logged.
+
+    Attributes:
+        request_id: Handle used to GET the request.
+        status: pending, ready, or failed.
+        requested_at: Official request timestamp (UTC ISO).
+        requested_by: Caller identity stored on the log row.
+        resolution_method: unique_match or candidate_id.
+        report: Full report when ``status`` is ready; otherwise ``null``.
+    """
+
+    request_id: str
+    status: RequestStatusValue
+    requested_at: str
+    requested_by: str | None = None
+    resolution_method: str
+    report: FPVRReportResponse | None = None
