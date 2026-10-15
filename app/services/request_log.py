@@ -55,7 +55,6 @@ class RequestLogService:
             raise ValueError(f"Invalid request log table name: {table!r}")
         self._table = table
         self._ensured = False
-        self._memory: dict[str, dict[str, str]] = {}
 
     def insert(
         self,
@@ -92,17 +91,16 @@ class RequestLogService:
         Raises:
             RequestLogError: If App SP auth or SQL fails.
         """
-        # Warehouse request logging is disabled for local testing.
-        # self._ensure_table(user_token=user_token)
-        # sql = (
-        #     f"INSERT INTO {self._table} ("
-        #     "request_id, report_code, subject_ssn, first_name, last_name, "
-        #     "date_of_birth, status, requested_by, requested_at, ready_at, "
-        #     "resolution_method) VALUES ("
-        #     ":request_id, :report_code, :subject_ssn, :first_name, :last_name, "
-        #     ":date_of_birth, :status, :requested_by, :requested_at, :ready_at, "
-        #     ":resolution_method)"
-        # )
+        self._ensure_table(user_token=user_token)
+        sql = (
+            f"INSERT INTO {self._table} ("
+            "request_id, report_code, subject_ssn, first_name, last_name, "
+            "date_of_birth, status, requested_by, requested_at, ready_at, "
+            "resolution_method) VALUES ("
+            ":request_id, :report_code, :subject_ssn, :first_name, :last_name, "
+            ":date_of_birth, :status, :requested_by, :requested_at, :ready_at, "
+            ":resolution_method)"
+        )
         params = {
             "request_id": request_id,
             "report_code": report_code,
@@ -116,8 +114,7 @@ class RequestLogService:
             "ready_at": ready_at or "",
             "resolution_method": resolution_method,
         }
-        self._memory[request_id] = dict(params)
-        # self._execute(sql, params, user_token=user_token)
+        self._execute(sql, params, user_token=user_token)
 
     def get(self, request_id: str, *, user_token: str | None = None) -> dict[str, str] | None:
         """Fetch one request log row.
@@ -131,17 +128,30 @@ class RequestLogService:
         Raises:
             RequestLogError: If App SP auth or SQL fails.
         """
-        # Warehouse request logging is disabled for local testing.
-        # self._ensure_table(user_token=user_token)
-        # sql = (
-        #     f"SELECT request_id, report_code, subject_ssn, first_name, last_name, "
-        #     f"date_of_birth, status, requested_by, requested_at, ready_at, "
-        #     f"resolution_method FROM {self._table} WHERE request_id = :request_id "
-        #     "LIMIT 1"
-        # )
-        # rows = self._execute(sql, {"request_id": request_id}, user_token=user_token)
-        row = self._memory.get(request_id)
-        return dict(row) if row is not None else None
+        self._ensure_table(user_token=user_token)
+        sql = (
+            f"SELECT request_id, report_code, subject_ssn, first_name, last_name, "
+            f"date_of_birth, status, requested_by, requested_at, ready_at, "
+            f"resolution_method FROM {self._table} WHERE request_id = :request_id "
+            "LIMIT 1"
+        )
+        rows = self._execute(sql, {"request_id": request_id}, user_token=user_token)
+        if not rows:
+            return None
+        keys = (
+            "request_id",
+            "report_code",
+            "subject_ssn",
+            "first_name",
+            "last_name",
+            "date_of_birth",
+            "status",
+            "requested_by",
+            "requested_at",
+            "ready_at",
+            "resolution_method",
+        )
+        return {k: ("" if v is None else str(v)) for k, v in zip(keys, rows[0])}
 
     def update_status(
         self,
@@ -161,23 +171,16 @@ class RequestLogService:
         Raises:
             RequestLogError: If App SP auth or SQL fails.
         """
-        # Warehouse request logging is disabled for local testing.
-        # if ready_at:
-        #     sql = (
-        #         f"UPDATE {self._table} SET status = :status, ready_at = :ready_at "
-        #         "WHERE request_id = :request_id"
-        #     )
-        #     params = {"status": status.value, "ready_at": ready_at, "request_id": request_id}
-        # else:
-        #     sql = f"UPDATE {self._table} SET status = :status WHERE request_id = :request_id"
-        #     params = {"status": status.value, "request_id": request_id}
-        # self._execute(sql, params, user_token=user_token)
-        row = self._memory.get(request_id)
-        if row is None:
-            return
-        row["status"] = status.value
         if ready_at:
-            row["ready_at"] = ready_at
+            sql = (
+                f"UPDATE {self._table} SET status = :status, ready_at = :ready_at "
+                "WHERE request_id = :request_id"
+            )
+            params = {"status": status.value, "ready_at": ready_at, "request_id": request_id}
+        else:
+            sql = f"UPDATE {self._table} SET status = :status WHERE request_id = :request_id"
+            params = {"status": status.value, "request_id": request_id}
+        self._execute(sql, params, user_token=user_token)
 
     def _ensure_table(self, *, user_token: str | None = None) -> None:
         """Create the request log table if it does not exist."""
