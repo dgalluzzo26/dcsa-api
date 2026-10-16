@@ -1,7 +1,7 @@
 {
   "info": {
     "_postman_id": "b483c537-e678-4009-8af1-a16594e4f400",
-    "name": "My Collection",
+    "name": "DCSA-API",
     "description": "### Welcome to Postman! This is your first collection. \n\nCollections are your starting point for building and testing APIs. You can use this one to:\n\n• Group related requests\n• Test your API in real-world scenarios\n• Document and share your requests\n\nUpdate the name and overview whenever you’re ready to make it yours.\n\n[Learn more about Postman Collections.](https://learning.postman.com/docs/collections/collections-overview/)",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
     "_exporter_id": "58844765",
@@ -79,7 +79,12 @@
               ]
             },
             "method": "POST",
-            "header": [],
+            "header": [
+              {
+                "key": "x-forwarded-email",
+                "value": "{{forwarded-email}}"
+              }
+            ],
             "body": {
               "mode": "raw",
               "raw": "{\n  \"report_code\": \"FPVR-6\",\n  \"first_name\": \"Steven\",\n  \"last_name\": \"Kelly\",\n  \"date_of_birth\": \"1992-02-14\"\n}",
@@ -134,7 +139,12 @@
               ]
             },
             "method": "GET",
-            "header": [],
+            "header": [
+              {
+                "key": "x-forwarded-email",
+                "value": "{{forwarded-email}}"
+              }
+            ],
             "url": {
               "raw": "http://127.0.0.1:8000/api/v1/requests/{{data_ready_request_id}}",
               "protocol": "http",
@@ -181,7 +191,12 @@
               ]
             },
             "method": "POST",
-            "header": [],
+            "header": [
+              {
+                "key": "x-forwarded-email",
+                "value": "{{forwarded-email}}"
+              }
+            ],
             "body": {
               "mode": "raw",
               "raw": "{\n  \"report_code\": \"FPVR-2\",\n  \"first_name\": \"Charles\",\n  \"last_name\": \"Morgan\",\n  \"date_of_birth\": \"1978-10-13\"\n}",
@@ -236,7 +251,12 @@
               ]
             },
             "method": "GET",
-            "header": [],
+            "header": [
+              {
+                "key": "x-forwarded-email",
+                "value": "{{forwarded-email}}"
+              }
+            ],
             "url": {
               "raw": "http://127.0.0.1:8000/api/v1/requests/{{response_pending_request_id}}",
               "protocol": "http",
@@ -283,7 +303,12 @@
               ]
             },
             "method": "POST",
-            "header": [],
+            "header": [
+              {
+                "key": "x-forwarded-email",
+                "value": "{{forwarded-email}}"
+              }
+            ],
             "body": {
               "mode": "raw",
               "raw": "{\n  \"report_code\": \"FPVR-6\",\n  \"first_name\": \"Michael\",\n  \"last_name\": \"Smith\"\n}",
@@ -369,7 +394,7 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  ""
+                  "const jsonData = pm.response.json();\npm.environment.set(\"request_id\", jsonData.request_id);\nconsole.log(\"Saved request_id:\", jsonData.request_id);"
                 ]
               }
             }
@@ -386,7 +411,12 @@
               ]
             },
             "method": "POST",
-            "header": [],
+            "header": [
+              {
+                "key": "x-forwarded-email",
+                "value": "{{forwarded-email}}"
+              }
+            ],
             "body": {
               "mode": "raw",
               "raw": "{\n  \"report_code\": \"FPVR-6\",\n  \"first_name\": \"Steven\",\n  \"last_name\": \"Kelly\",\n  \"date_of_birth\": \"1992-02-14\"\n}",
@@ -418,13 +448,54 @@
         },
         {
           "name": "Get request",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [
+              {
+                "key": "x-forwarded-email",
+                "value": "{{forwarded-email}}"
+              }
+            ],
+            "url": {
+              "raw": "http://127.0.0.1:8000/api/v1/requests/{{request_id}}",
+              "protocol": "http",
+              "host": [
+                "127",
+                "0",
+                "0",
+                "1"
+              ],
+              "port": "8000",
+              "path": [
+                "api",
+                "v1",
+                "requests",
+                "{{request_id}}"
+              ]
+            },
+            "description": "This is a GET request and it is used to \"get\" data from an endpoint. There is no request body for a GET request, but you can use query parameters to help specify the resource you want data on (e.g., in this request, we have `id=1`).\n\nA successful GET response will have a `200 OK` status, and should include some kind of response body - for example, HTML web content or JSON data."
+          },
+          "response": []
+        },
+        {
+          "name": "Create FPVR-1 Request",
           "event": [
             {
               "listen": "test",
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  ""
+                  "const jsonData = pm.response.json();\npm.environment.set(\"request_id\", jsonData.request_id);\nconsole.log(\"Saved request_id:\", jsonData.request_id);"
                 ]
               }
             }
@@ -440,10 +511,24 @@
                 }
               ]
             },
-            "method": "GET",
-            "header": [],
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-forwarded-email",
+                "value": "{{forwarded-email}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"report_code\": \"FPVR-6\",\n  \"first_name\": \"Steven\",\n  \"last_name\": \"Kelly\",\n  \"date_of_birth\": \"1992-02-14\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
             "url": {
-              "raw": "http://127.0.0.1:8000/api/v1/requests/{{data_ready_request_id}}",
+              "raw": "http://127.0.0.1:8000/api/v1/requests/fpvr-1",
               "protocol": "http",
               "host": [
                 "127",
@@ -456,7 +541,49 @@
                 "api",
                 "v1",
                 "requests",
-                "{{data_ready_request_id}}"
+                "fpvr-1"
+              ]
+            },
+            "description": "This is a POST request, submitting data to an API via the request body. This request submits JSON data, and the data is reflected in the response.\n\nA successful POST request typically returns a `200 OK` or `201 Created` response code."
+          },
+          "response": []
+        },
+        {
+          "name": "Get request Copy",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [
+              {
+                "key": "x-forwarded-email",
+                "value": "{{forwarded-email}}"
+              }
+            ],
+            "url": {
+              "raw": "http://127.0.0.1:8000/api/v1/requests/fpvr-1/{{request_id}}",
+              "protocol": "http",
+              "host": [
+                "127",
+                "0",
+                "0",
+                "1"
+              ],
+              "port": "8000",
+              "path": [
+                "api",
+                "v1",
+                "requests",
+                "fpvr-1",
+                "{{request_id}}"
               ]
             },
             "description": "This is a GET request and it is used to \"get\" data from an endpoint. There is no request body for a GET request, but you can use query parameters to help specify the resource you want data on (e.g., in this request, we have `id=1`).\n\nA successful GET response will have a `200 OK` status, and should include some kind of response body - for example, HTML web content or JSON data."
