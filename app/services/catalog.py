@@ -5,9 +5,8 @@ from __future__ import annotations
 from typing import Any
 
 from app import __version__
-from app.core.config import get_settings
+from app.core.config import ReportConfig, get_settings
 from app.core.sql import WarehouseNotConfiguredError, workspace_host
-from app.models.fpvr import ReportCode
 from app.models.report_contract import (
     SECTION_ROW_MODELS,
     ApiCatalog,
@@ -15,9 +14,6 @@ from app.models.report_contract import (
     CatalogField,
     CatalogReport,
     CatalogScenario,
-    REPORT_READINESS,
-    REPORT_SOURCES,
-    report_title,
 )
 
 _SAMPLE_REQUEST_ID = "7c2e1a8f-4b0d-4e9a-9f31-2a6c8d5e1b04"
@@ -92,45 +88,115 @@ def _json_type(schema: dict[str, Any]) -> tuple[str, bool]:
     return str(schema.get("type") or "string"), schema.get("type") == "null"
 
 
-def _fields_for_section(section: str) -> list[CatalogField]:
-    """List public JSON fields for one report section.
+def _public_columns(source_name: str) -> list[str]:
+    """Return JSON columns for a source (configured columns minus omitted).
 
     Args:
-        section: Logical source name.
+        source_name: YAML source key.
+
+    Returns:
+        Public column names in SELECT order.
+    """
+    source = get_settings().sources[source_name]
+    omit = set(source.omit_from_output)
+    return [name for name in source.columns if name not in omit]
+
+
+def _fields_for_source(source_name: str) -> list[CatalogField]:
+    """List public JSON fields for one configured source.
+
+    Args:
+        source_name: YAML source key.
 
     Returns:
         Catalog field metadata.
     """
-    model = SECTION_ROW_MODELS[section]
-    props = model.model_json_schema().get("properties") or {}
-    required = set(model.model_json_schema().get("required") or [])
-    fields: list[CatalogField] = []
-    for name, spec in props.items():
-        json_type, nullable = _json_type(spec)
-        fields.append(
-            CatalogField(
+    public = _public_columns(source_name)
+    model = SECTION_ROW_MODELS.get(source_name)
+    schema_fields: dict[str, CatalogField] = {}
+    if model is not None:
+        props = model.model_json_schema().get("properties") or {}
+        required = set(model.model_json_schema().get("required") or [])
+        for name, spec in props.items():
+            json_type, nullable = _json_type(spec)
+            schema_fields[name] = CatalogField(
                 name=name,
                 type=json_type,
                 nullable=nullable or name not in required,
             )
-        )
+    fields: list[CatalogField] = []
+    for name in public:
+        if name in schema_fields:
+            fields.append(schema_fields[name])
+        else:
+            fields.append(CatalogField(name=name, type="string", nullable=True))
     return fields
 
 
-def _example_envelope(code: ReportCode) -> dict[str, Any]:
+def _sample_row(source_name: str) -> dict[str, Any]:
+    """Return an example row for a source, synthesizing unknowns.
+
+    Args:
+        source_name: YAML source key.
+
+    Returns:
+        Example JSON object for one section row.
+    """
+    public = _public_columns(source_name)
+    known = _SAMPLE_ROWS.get(source_name) or {}
+    row: dict[str, Any] = {}
+    for name in public:
+        if name in known:
+            row[name] = known[name]
+        else:
+            row[name] = f"example-{name.lower()}"
+    return row
+
+
+def _readiness_summary(report: ReportConfig) -> str:
+    """Turn a YAML readiness rule into catalog prose.
+
+    Args:
+        report: Configured report.
+
+    Returns:
+        Human-readable readiness description.
+    """
+    readiness = report.readiness
+    if readiness.mode == "always":
+        return (
+            "Ready when identity is resolved. Configured sections may be empty "
+            "arrays if ABAC hides rows."
+        )
+    if readiness.mode == "section_non_empty":
+        return f"Ready when at least one {readiness.section} row exists."
+    if readiness.mode == "any_section_non_empty":
+        names = " or ".join(readiness.sections or [])
+        return f"Pending until at least one {names} row exists."
+    return (
+        f"Ready when {readiness.field} is present on a {readiness.section} row."
+    )
+
+
+def _example_envelope(report_code: str) -> dict[str, Any]:
     """Build a sample GET /response body for one report.
 
     Args:
-        code: FPVR report code.
+        report_code: YAML report key.
 
     Returns:
         Example JSON matching ``FPVRReportResponse``.
     """
-    data = {source: [_SAMPLE_ROWS[source]] for source in REPORT_SOURCES[code]}
+    settings = get_settings()
+    report = settings.reports[report_code]
+    data = {
+        section_name: [_sample_row(section.source)]
+        for section_name, section in report.sections.items()
+    }
     return {
         "request_id": _SAMPLE_REQUEST_ID,
-        "report_code": code.value,
-        "report_title": report_title(code),
+        "report_code": report_code,
+        "report_title": report.name,
         "subject": dict(_SAMPLE_SUBJECT),
         "data": data,
     }
@@ -142,17 +208,21 @@ def build_catalog() -> ApiCatalog:
     Returns:
         Typed catalog of APIs, scenarios, and per-report schemas.
     """
+    settings = get_settings()
     reports = []
-    for code in ReportCode:
-        sources = list(REPORT_SOURCES[code])
+    for code, report in settings.reports.items():
+        source_names = [section.source for section in report.sections.values()]
         reports.append(
             CatalogReport(
                 report_code=code,
-                title=report_title(code),
-                sources=sources,
-                tables=[get_settings().source_table(s) for s in sources],
-                readiness=REPORT_READINESS[code],
-                data_fields={s: _fields_for_section(s) for s in sources},
+                title=report.name,
+                sources=source_names,
+                tables=[settings.source_table(name) for name in source_names],
+                readiness=_readiness_summary(report),
+                data_fields={
+                    section_name: _fields_for_source(section.source)
+                    for section_name, section in report.sections.items()
+                },
                 example_response=_example_envelope(code),
             )
         )
@@ -356,7 +426,7 @@ def build_catalog() -> ApiCatalog:
                     id="ready",
                     http_status=200,
                     summary="See reports[].example_response for each FPVR code.",
-                    response=_example_envelope(ReportCode.FPVR_6),
+                    response=_example_envelope("FPVR-6"),
                 ),
                 CatalogScenario(
                     id="not_ready",

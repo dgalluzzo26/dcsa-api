@@ -1,100 +1,10 @@
-"""Shared FPVR report section contract used by assembly and the catalog."""
+"""Shared FPVR catalog schemas and optional known-section row models."""
 
 from __future__ import annotations
 
 from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict
-
-from app.models.fpvr import REPORT_TITLES, ReportCode
-
-# Logical section name -> Unity Catalog table in DCSA_CATALOG_SCHEMA.
-SECTION_TABLES: dict[str, str] = {
-    "identity": "subject_identity",
-    "status": "subject_status",
-    "check": "subject_check",
-    "activity": "subject_activity",
-    "signal": "subject_signal",
-}
-
-# Columns selected for each section. SSN is queried then stripped from JSON.
-SECTION_COLUMNS: dict[str, tuple[str, ...]] = {
-    "identity": (
-        "SSN",
-        "FIRST_NAME",
-        "LAST_NAME",
-        "DATE_OF_BIRTH",
-        "PLACE_OF_BIRTH",
-        "SEX",
-        "CITIZENSHIP",
-        "MARITAL_STATUS",
-        "UPDATED_TS",
-        "RECORD_VERSION",
-    ),
-    "status": (
-        "SSN",
-        "ORG_CODE",
-        "POSITION_TITLE",
-        "DUTY_LOCATION",
-        "RISK_TIER",
-        "ELIGIBILITY_LEVEL",
-        "STATUS_CODE",
-        "STATUS_EFFECTIVE_DATE",
-        "UPDATED_TS",
-        "RECORD_VERSION",
-    ),
-    "check": (
-        "CHECK_ID",
-        "SSN",
-        "LOCATION_CODE",
-        "CHECK_TYPE",
-        "RESULT_CODE",
-        "RESULT_SCORE",
-        "CHECKED_TS",
-        "LOAD_SEQ",
-    ),
-    "activity": (
-        "ACTIVITY_ID",
-        "SSN",
-        "LOCATION_CODE",
-        "ACTIVITY_TYPE",
-        "DETAIL",
-        "EVENT_TS",
-        "LOAD_SEQ",
-    ),
-    "signal": (
-        "SIGNAL_ID",
-        "SSN",
-        "LOCATION_CODE",
-        "SIGNAL_TYPE",
-        "SEVERITY",
-        "SIGNAL_TS",
-        "LOAD_SEQ",
-    ),
-}
-
-REPORT_SOURCES: dict[ReportCode, tuple[str, ...]] = {
-    ReportCode.FPVR_1: ("identity", "status", "check"),
-    ReportCode.FPVR_2: ("check", "activity"),
-    ReportCode.FPVR_3: ("status", "check"),
-    ReportCode.FPVR_4: ("identity", "status"),
-    ReportCode.FPVR_5: ("signal",),
-    ReportCode.FPVR_6: ("identity", "status"),
-    ReportCode.FPVR_7: ("status",),
-}
-
-REPORT_READINESS: dict[ReportCode, str] = {
-    ReportCode.FPVR_1: (
-        "Ready when identity is resolved. identity, status, and check sections "
-        "may be empty arrays if ABAC hides rows."
-    ),
-    ReportCode.FPVR_2: "Pending until at least one check or activity row exists.",
-    ReportCode.FPVR_3: "Ready when at least one status row exists.",
-    ReportCode.FPVR_4: "Ready when identity is resolved; usually in-lake.",
-    ReportCode.FPVR_5: "Ready with zero or more alerts (empty signal list is valid).",
-    ReportCode.FPVR_6: "Ready when identity is present (Human Capital).",
-    ReportCode.FPVR_7: "Ready when STATUS_CODE is present on a status row.",
-}
 
 
 class IdentitySectionRow(BaseModel):
@@ -211,7 +121,7 @@ class CatalogApi(BaseModel):
 class CatalogReport(BaseModel):
     """Per-report GET /response payload contract."""
 
-    report_code: ReportCode
+    report_code: str
     title: str
     sources: list[str]
     tables: list[str]
@@ -228,27 +138,3 @@ class ApiCatalog(BaseModel):
     apis: list[CatalogApi]
     reports: list[CatalogReport]
     notes: list[str]
-
-
-def public_section_columns(section: str) -> tuple[str, ...]:
-    """Return section columns that appear in JSON (no SSN).
-
-    Args:
-        section: Logical source name.
-
-    Returns:
-        Column names in SELECT order minus SSN.
-    """
-    return tuple(c for c in SECTION_COLUMNS[section] if c != "SSN")
-
-
-def report_title(code: ReportCode) -> str:
-    """Return the display title for a report code.
-
-    Args:
-        code: FPVR report code.
-
-    Returns:
-        Human-readable title.
-    """
-    return REPORT_TITLES[code]

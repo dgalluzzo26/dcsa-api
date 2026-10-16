@@ -5,14 +5,13 @@ from __future__ import annotations
 from uuid import uuid4
 
 from app.core.candidates import CandidateTokenError, sign_candidate_id, ssn_from_candidate_id
+from app.core.config import get_settings
 from app.models.fpvr import (
-    REPORT_TITLES,
     AmbiguousSubjectResponse,
     FPVRReportResponse,
     FPVRRequestAccepted,
     FPVRRequestCreate,
     FPVRRequestStatus,
-    ReportCode,
     RequestStatusValue,
     SubjectCandidate,
 )
@@ -90,7 +89,7 @@ class FPVRRequestService:
             dob = subject.DATE_OF_BIRTH.date().isoformat()
         get_request_log_service().insert(
             request_id=request_id,
-            report_code=body.report_code.value,
+            report_code=body.report_code,
             subject_ssn=subject.SSN,
             first_name=subject.FIRST_NAME,
             last_name=subject.LAST_NAME,
@@ -104,7 +103,7 @@ class FPVRRequestService:
         return FPVRRequestAccepted(
             request_id=request_id,
             report_code=body.report_code,
-            report_title=REPORT_TITLES[body.report_code],
+            report_title=get_settings().report_title(body.report_code),
             status=status,
             requested_at=now,
             requested_by=requested_by,
@@ -131,7 +130,9 @@ class FPVRRequestService:
         if row is None:
             raise OfficialRequestNotFoundError(request_id)
         current = RequestStatusValue(row["status"])
-        report_code = ReportCode(row["report_code"])
+        report_code = row["report_code"]
+        if report_code not in get_settings().reports:
+            raise OfficialRequestNotFoundError(request_id)
         if current == RequestStatusValue.pending:
             subject = self._identity_by_ssn(row["subject_ssn"], user_token=user_token)
             new_status, _ = get_report_assembler().assemble(
@@ -148,7 +149,7 @@ class FPVRRequestService:
         return FPVRRequestStatus(
             request_id=row["request_id"],
             report_code=report_code,
-            report_title=REPORT_TITLES[report_code],
+            report_title=get_settings().report_title(report_code),
             status=current,
             requested_at=row["requested_at"],
             ready_at=row["ready_at"] or None,

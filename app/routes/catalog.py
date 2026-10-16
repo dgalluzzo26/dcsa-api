@@ -22,8 +22,8 @@ router = APIRouter(tags=["catalog"])
 def get_catalog() -> ApiCatalog:
     """Return the caller contract for token, request, status, and response APIs.
 
-    Includes HTTP scenarios and the exact ``data`` section fields for FPVR-1
-    through FPVR-7.
+    Includes HTTP scenarios and the exact ``data`` section fields for each
+    configured report.
     \f
     Returns:
         Typed catalog generated from the same report contract the assembler uses.
@@ -106,7 +106,7 @@ def _render_help(catalog: ApiCatalog) -> str:
     )
     for report in catalog.reports:
         parts.append(
-            f"<h3>{escape(report.report_code.value)} — {escape(report.title)}</h3>"
+            f"<h3>{escape(report.report_code)} — {escape(report.title)}</h3>"
         )
         parts.append(f"<p>{escape(report.readiness)}</p>")
         parts.append(
