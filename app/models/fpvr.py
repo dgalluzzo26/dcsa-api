@@ -9,29 +9,6 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
-class ReportCode(str, Enum):
-    """FPVR contract report requested by the caller."""
-
-    FPVR_1 = "FPVR-1"
-    FPVR_2 = "FPVR-2"
-    FPVR_3 = "FPVR-3"
-    FPVR_4 = "FPVR-4"
-    FPVR_5 = "FPVR-5"
-    FPVR_6 = "FPVR-6"
-    FPVR_7 = "FPVR-7"
-
-
-REPORT_TITLES: dict[ReportCode, str] = {
-    ReportCode.FPVR_1: "Application Bundle",
-    ReportCode.FPVR_2: "Investigation Summary",
-    ReportCode.FPVR_3: "Adjudication Summary",
-    ReportCode.FPVR_4: "CV Summary",
-    ReportCode.FPVR_5: "CV Alerts",
-    ReportCode.FPVR_6: "Human Capital",
-    ReportCode.FPVR_7: "Favorable to Onboard",
-}
-
-
 class RequestStatusValue(str, Enum):
     """Lifecycle of an official FPVR request."""
 
@@ -57,7 +34,7 @@ class FPVRRequestCreate(BaseModel):
 
     model_config = ConfigDict(populate_by_name=True)
 
-    report_code: ReportCode = Field(examples=["FPVR-6"])
+    report_code: str = Field(min_length=1, examples=["FPVR-6"])
     ssn: str | None = None
     first_name: str | None = None
     last_name: str | None = None

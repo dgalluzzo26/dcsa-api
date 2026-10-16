@@ -6,6 +6,7 @@ from uuid import uuid4
 
 from app.core.candidates import CandidateTokenError, sign_candidate_id, ssn_from_candidate_id
 from app.core.config import get_settings
+from app.core.jobs import JobKickoffError, run_job_now
 from app.models.fpvr import (
     AmbiguousSubjectResponse,
     FPVRReportResponse,
@@ -75,7 +76,7 @@ class FPVRRequestService:
             SubjectNotFoundError: No matching identity.
             AmbiguousSubjectError: Multiple matches; no request_id issued.
             SubjectIdentityQueryError: Identity SQL failed.
-            ReportQueryError: Report SQL failed.
+            ReportQueryError: Report SQL failed or pending job kickoff failed.
             RequestLogError: App SP log write failed.
         """
         subject, method = self._resolve(body, user_token=user_token)
@@ -87,7 +88,8 @@ class FPVRRequestService:
         dob = None
         if subject.DATE_OF_BIRTH is not None:
             dob = subject.DATE_OF_BIRTH.date().isoformat()
-        get_request_log_service().insert(
+        log = get_request_log_service()
+        log.insert(
             request_id=request_id,
             report_code=body.report_code,
             subject_ssn=subject.SSN,
@@ -100,6 +102,16 @@ class FPVRRequestService:
             ready_at=now if status == RequestStatusValue.ready else None,
             resolution_method=method,
         )
+        if status == RequestStatusValue.pending:
+            self._kickoff_pending_job(
+                request_id,
+                report_code=body.report_code,
+                subject_ssn=subject.SSN,
+                subject_first_name=subject.FIRST_NAME,
+                subject_last_name=subject.LAST_NAME,
+                subject_date_of_birth=dob,
+                user_token=user_token,
+            )
         return FPVRRequestAccepted(
             request_id=request_id,
             report_code=body.report_code,
@@ -262,6 +274,53 @@ class FPVRRequestService:
         if result.total != 1:
             raise SubjectNotFoundError("Subject is not visible to the caller")
         return result.items[0]
+
+    def _kickoff_pending_job(
+        self,
+        request_id: str,
+        *,
+        report_code: str,
+        subject_ssn: str,
+        subject_first_name: str | None,
+        subject_last_name: str | None,
+        subject_date_of_birth: str | None,
+        user_token: str,
+    ) -> None:
+        """Start the YAML-configured job once, if this report has ``on_pending``.
+
+        Args:
+            request_id: Official request handle.
+            report_code: Configured report code.
+            subject_ssn: Resolved subject SSN.
+            subject_first_name: Resolved first name.
+            subject_last_name: Resolved last name.
+            subject_date_of_birth: Resolved date of birth as ISO date.
+            user_token: Caller OBO token used locally when App SP credentials
+                are not configured.
+
+        Raises:
+            ReportQueryError: If the Jobs API cannot start the job. The log
+                row is marked ``failed`` first.
+        """
+        job = get_settings().pending_job(report_code)
+        if job is None:
+            return
+        log = get_request_log_service()
+        try:
+            run_id = run_job_now(
+                job,
+                request_id=request_id,
+                report_code=report_code,
+                subject_ssn=subject_ssn,
+                subject_first_name=subject_first_name,
+                subject_last_name=subject_last_name,
+                subject_date_of_birth=subject_date_of_birth,
+                user_token=user_token,
+            )
+        except JobKickoffError as exc:
+            log.update_status(request_id, RequestStatusValue.failed)
+            raise ReportQueryError(str(exc)) from exc
+        log.set_job_run_id(request_id, run_id)
 
 
 _fpvr_service: FPVRRequestService | None = None
