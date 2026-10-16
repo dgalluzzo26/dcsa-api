@@ -13,10 +13,14 @@ from app.models.fpvr import (
     FPVRReportResponse,
     FPVRRequestAccepted,
     FPVRRequestCreate,
-    FPVRRequestStatus,
     ReportCode,
     RequestStatusValue,
     SubjectCandidate,
+)
+from app.models.fpvr1 import (
+    FPVR1Report,
+    FPVR1RequestAccepted,
+    FPVR1RequestCreate,
 )
 from app.models.report_contract import ApiCatalog
 from app.models.subject_identity import (
@@ -74,10 +78,12 @@ __all__ = [
     "AmbiguousSubjectResponse",
     "ApiCatalog",
     "ErrorResponse",
+    "FPVR1Report",
+    "FPVR1RequestAccepted",
+    "FPVR1RequestCreate",
     "FPVRReportResponse",
     "FPVRRequestAccepted",
     "FPVRRequestCreate",
-    "FPVRRequestStatus",
     "HealthResponse",
     "MeResponse",
     "ReportCode",

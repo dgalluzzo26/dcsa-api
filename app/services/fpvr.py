@@ -11,7 +11,6 @@ from app.models.fpvr import (
     FPVRReportResponse,
     FPVRRequestAccepted,
     FPVRRequestCreate,
-    FPVRRequestStatus,
     ReportCode,
     RequestStatusValue,
     SubjectCandidate,
@@ -47,10 +46,6 @@ class OfficialRequestNotFoundError(LookupError):
     """Raised when request_id is unknown."""
 
 
-class RequestNotReadyError(RuntimeError):
-    """Raised when the response is fetched before status is ready."""
-
-
 class FPVRRequestService:
     """Coordinate entity resolution, App SP logging, and OBO report reads."""
 
@@ -69,7 +64,7 @@ class FPVRRequestService:
             requested_by: Caller identity stored on the log row.
 
         Returns:
-            Accepted request with request_id and status.
+            Accepted request with request_id, status, and report when ready.
 
         Raises:
             CandidateTokenError: Invalid candidate_id.
@@ -80,7 +75,7 @@ class FPVRRequestService:
             RequestLogError: App SP log write failed.
         """
         subject, method = self._resolve(body, user_token=user_token)
-        status, _payload = get_report_assembler().assemble(
+        status, payload = get_report_assembler().assemble(
             body.report_code, subject, user_token=user_token
         )
         now = utc_now_iso()
@@ -100,91 +95,90 @@ class FPVRRequestService:
             requested_at=now,
             ready_at=now if status == RequestStatusValue.ready else None,
             resolution_method=method,
+            user_token=user_token,
         )
+        report = None
+        if status == RequestStatusValue.ready:
+            report = self._report(body.report_code, payload)
         return FPVRRequestAccepted(
             request_id=request_id,
-            report_code=body.report_code,
-            report_title=REPORT_TITLES[body.report_code],
             status=status,
             requested_at=now,
             requested_by=requested_by,
             resolution_method=method,
+            report=report,
         )
 
-    def status(self, request_id: str, *, user_token: str) -> FPVRRequestStatus:
-        """Return request status, re-checking the lake if still pending.
+    def get(self, request_id: str, *, user_token: str) -> FPVRRequestAccepted:
+        """Return a request, re-checking the lake if still pending.
 
         Args:
             request_id: Public handle.
-            user_token: Caller OBO token used when flipping pending to ready.
+            user_token: Caller OBO token used when flipping pending to ready
+                and when assembling a ready report.
 
         Returns:
-            Current status (SSN is not included).
+            Same body as create. ``report`` is set when status is ready.
 
         Raises:
             OfficialRequestNotFoundError: Unknown id.
             RequestLogError: Log read/update failed.
-            ReportQueryError: Recheck SQL failed.
+            ReportQueryError: Recheck or report SQL failed.
             SubjectIdentityQueryError: Identity reload failed.
         """
-        row = get_request_log_service().get(request_id)
+        row = get_request_log_service().get(request_id, user_token=user_token)
         if row is None:
             raise OfficialRequestNotFoundError(request_id)
         current = RequestStatusValue(row["status"])
         report_code = ReportCode(row["report_code"])
+        payload = None
         if current == RequestStatusValue.pending:
             subject = self._identity_by_ssn(row["subject_ssn"], user_token=user_token)
-            new_status, _ = get_report_assembler().assemble(
+            new_status, assembled = get_report_assembler().assemble(
                 report_code, subject, user_token=user_token
             )
             if new_status == RequestStatusValue.ready:
                 ready_at = utc_now_iso()
                 get_request_log_service().update_status(
-                    request_id, new_status, ready_at=ready_at
+                    request_id, new_status, ready_at=ready_at, user_token=user_token
                 )
                 row["status"] = new_status.value
-                row["ready_at"] = ready_at
                 current = new_status
-        return FPVRRequestStatus(
+                payload = assembled
+        elif current == RequestStatusValue.ready:
+            subject = self._identity_by_ssn(row["subject_ssn"], user_token=user_token)
+            _, payload = get_report_assembler().assemble(
+                report_code, subject, user_token=user_token
+            )
+        report = None
+        if current == RequestStatusValue.ready and payload is not None:
+            report = self._report(report_code, payload)
+        return FPVRRequestAccepted(
             request_id=row["request_id"],
-            report_code=report_code,
-            report_title=REPORT_TITLES[report_code],
             status=current,
             requested_at=row["requested_at"],
-            ready_at=row["ready_at"] or None,
             requested_by=row["requested_by"] or None,
+            resolution_method=row["resolution_method"] or "",
+            report=report,
         )
 
-    def response(self, request_id: str, *, user_token: str) -> FPVRReportResponse:
-        """Return the report payload if the request is ready.
+    def _report(
+        self,
+        report_code: ReportCode,
+        payload: dict,
+    ) -> FPVRReportResponse:
+        """Build the nested report object from an assembler payload.
 
         Args:
-            request_id: Public handle.
-            user_token: Caller OBO token for ABAC/RBAC-filtered reads.
+            report_code: Report produced.
+            payload: Assembler map with ``subject`` and ``sections``.
 
         Returns:
             Report JSON without SSN.
-
-        Raises:
-            OfficialRequestNotFoundError: Unknown id.
-            RequestNotReadyError: Status is not ready.
-            ReportQueryError: OBO SQL failed.
-            SubjectIdentityQueryError: Identity reload failed.
         """
-        snapshot = self.status(request_id, user_token=user_token)
-        if snapshot.status != RequestStatusValue.ready:
-            raise RequestNotReadyError(request_id)
-        row = get_request_log_service().get(request_id)
-        if row is None:
-            raise OfficialRequestNotFoundError(request_id)
-        subject = self._identity_by_ssn(row["subject_ssn"], user_token=user_token)
-        _status, payload = get_report_assembler().assemble(
-            snapshot.report_code, subject, user_token=user_token
-        )
         return FPVRReportResponse(
-            request_id=request_id,
-            report_code=snapshot.report_code,
-            report_title=snapshot.report_title,
+            code=report_code,
+            title=REPORT_TITLES[report_code],
             subject=payload["subject"],
             data=payload["sections"],
         )
