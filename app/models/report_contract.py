@@ -119,7 +119,7 @@ class CatalogApi(BaseModel):
 
 
 class CatalogReport(BaseModel):
-    """Per-report GET /response payload contract."""
+    """Per-report payload contract nested in request.report."""
 
     report_code: str
     title: str

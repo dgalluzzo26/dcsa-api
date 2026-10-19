@@ -42,7 +42,7 @@ app = FastAPI(
         },
         {
             "name": "fpvr-requests",
-            "description": "Official FPVR request, status, and OBO report response",
+            "description": "Official FPVR request create and get",
         },
         {
             "name": "catalog",

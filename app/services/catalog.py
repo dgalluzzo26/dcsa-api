@@ -133,53 +133,8 @@ def _fields_for_source(source_name: str) -> list[CatalogField]:
     return fields
 
 
-def _sample_row(source_name: str) -> dict[str, Any]:
-    """Return an example row for a source, synthesizing unknowns.
-
-    Args:
-        source_name: YAML source key.
-
-    Returns:
-        Example JSON object for one section row.
-    """
-    public = _public_columns(source_name)
-    known = _SAMPLE_ROWS.get(source_name) or {}
-    row: dict[str, Any] = {}
-    for name in public:
-        if name in known:
-            row[name] = known[name]
-        else:
-            row[name] = f"example-{name.lower()}"
-    return row
-
-
-def _readiness_summary(report: ReportConfig) -> str:
-    """Turn a YAML readiness rule into catalog prose.
-
-    Args:
-        report: Configured report.
-
-    Returns:
-        Human-readable readiness description.
-    """
-    readiness = report.readiness
-    if readiness.mode == "always":
-        return (
-            "Ready when identity is resolved. Configured sections may be empty "
-            "arrays if ABAC hides rows."
-        )
-    if readiness.mode == "section_non_empty":
-        return f"Ready when at least one {readiness.section} row exists."
-    if readiness.mode == "any_section_non_empty":
-        names = " or ".join(readiness.sections or [])
-        return f"Pending until at least one {names} row exists."
-    return (
-        f"Ready when {readiness.field} is present on a {readiness.section} row."
-    )
-
-
-def _example_envelope(report_code: str) -> dict[str, Any]:
-    """Build a sample GET /response body for one report.
+def _example_envelope(code: ReportCode) -> dict[str, Any]:
+    """Build a sample nested report body for one FPVR code.
 
     Args:
         report_code: YAML report key.
@@ -194,9 +149,8 @@ def _example_envelope(report_code: str) -> dict[str, Any]:
         for section_name, section in report.sections.items()
     }
     return {
-        "request_id": _SAMPLE_REQUEST_ID,
-        "report_code": report_code,
-        "report_title": report.name,
+        "code": code.value,
+        "title": report_title(code),
         "subject": dict(_SAMPLE_SUBJECT),
         "data": data,
     }
@@ -235,21 +189,19 @@ def build_catalog() -> ApiCatalog:
     }
     accepted = {
         "request_id": _SAMPLE_REQUEST_ID,
-        "report_code": "FPVR-6",
-        "report_title": "Human Capital",
         "status": "ready",
         "requested_at": "2026-10-01T16:00:00Z",
         "requested_by": "sp-client-id",
         "resolution_method": "unique_match",
+        "report": _example_envelope(ReportCode.FPVR_6),
     }
-    pending_status = {
+    pending = {
         "request_id": _SAMPLE_REQUEST_ID,
-        "report_code": "FPVR-2",
-        "report_title": "Investigation Summary",
         "status": "pending",
         "requested_at": "2026-10-01T16:00:00Z",
-        "ready_at": None,
         "requested_by": "sp-client-id",
+        "resolution_method": "unique_match",
+        "report": None,
     }
 
     try:
@@ -303,8 +255,8 @@ def build_catalog() -> ApiCatalog:
             scenarios=[
                 CatalogScenario(
                     id="unique_match",
-                    http_status=200,
-                    summary="Exactly one subject matched; request_id issued.",
+                    http_status=201,
+                    summary="Exactly one subject matched; request_id issued. report is included when ready.",
                     request=create_body,
                     response=accepted,
                 ),
@@ -372,72 +324,32 @@ def build_catalog() -> ApiCatalog:
             ],
         ),
         CatalogApi(
-            id="status",
+            id="get",
             method="GET",
             path="/api/v1/requests/{request_id}",
-            auth="Bearer",
+            auth="Bearer (OBO SQL; ABAC/RBAC applied when assembling report)",
             summary=(
-                "Poll request lifecycle. Pending reports re-check the lake and may "
-                "flip to ready. SSN is never returned."
+                "Return the same body as POST. Pending reports re-check the lake "
+                "and may flip to ready with report set. SSN is never returned."
             ),
             request_body=None,
             scenarios=[
                 CatalogScenario(
                     id="pending",
                     http_status=200,
-                    summary="Report not yet servable (typical for FPVR-2/3/7).",
-                    response=pending_status,
+                    summary="Report not yet servable (typical for FPVR-2/3/7). report is null.",
+                    response=pending,
                 ),
                 CatalogScenario(
                     id="ready",
                     http_status=200,
-                    summary="Payload can be fetched from GET .../response.",
-                    response={
-                        "request_id": _SAMPLE_REQUEST_ID,
-                        "report_code": "FPVR-6",
-                        "report_title": "Human Capital",
-                        "status": "ready",
-                        "requested_at": "2026-10-01T16:00:00Z",
-                        "ready_at": "2026-10-01T16:00:02Z",
-                        "requested_by": "sp-client-id",
-                    },
+                    summary="Same envelope as POST 201; report is populated.",
+                    response=accepted,
                 ),
                 CatalogScenario(
                     id="not_found",
                     http_status=404,
                     summary="Unknown request_id (or not visible to this caller).",
-                    response={"detail": "Request not found"},
-                ),
-            ],
-        ),
-        CatalogApi(
-            id="response",
-            method="GET",
-            path="/api/v1/requests/{request_id}/response",
-            auth="Bearer (OBO SQL; ABAC/RBAC applied)",
-            summary=(
-                "Return the report JSON for a ready request. Envelope is the same "
-                "for every FPVR code; data keys match that report's sections. SSN "
-                "is omitted from subject and every section row."
-            ),
-            request_body=None,
-            scenarios=[
-                CatalogScenario(
-                    id="ready",
-                    http_status=200,
-                    summary="See reports[].example_response for each FPVR code.",
-                    response=_example_envelope("FPVR-6"),
-                ),
-                CatalogScenario(
-                    id="not_ready",
-                    http_status=409,
-                    summary="Status is still pending (or failed).",
-                    response={"detail": "Request is not ready"},
-                ),
-                CatalogScenario(
-                    id="not_found",
-                    http_status=404,
-                    summary="Unknown request_id.",
                     response={"detail": "Request not found"},
                 ),
             ],
@@ -455,7 +367,7 @@ def build_catalog() -> ApiCatalog:
             "Official requests are logged as the app service principal to "
             "dcsa_catalog.dcsa_api.api_request_log.",
             "Subject and report SELECT statements run on-behalf-of the caller.",
-            "SSN is an internal join key only; it is not returned on candidates, status, or response.",
+            "SSN is an internal join key only; it is not returned on candidates or request bodies.",
             "Interactive docs: /docs  ·  ReDoc: /redoc  ·  This catalog JSON: /api/v1/catalog",
         ],
     )
