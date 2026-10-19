@@ -14,7 +14,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 _IDENT = re.compile(r"^[A-Za-z0-9_]+$")
 _SCHEMA = re.compile(r"^[A-Za-z0-9_]+\.[A-Za-z0-9_]+$")
 _REPORT_CODE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
-_CONFIG_PATH = Path("report-config.yaml")
+_CONFIG_PATH = Path("config.yaml")
 
 
 def _normalize_workspace_host(value: str) -> str:

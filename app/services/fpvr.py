@@ -11,8 +11,8 @@ from app.models.fpvr import (
     FPVRReportResponse,
     FPVRRequestAccepted,
     FPVRRequestCreate,
+    REPORT_TITLES,
     ReportCode,
-    FPVRRequestStatus,
     RequestStatusValue,
     SubjectCandidate,
 )
@@ -103,8 +103,6 @@ class FPVRRequestService:
             report = self._report(body.report_code, payload)
         return FPVRRequestAccepted(
             request_id=request_id,
-            report_code=body.report_code,
-            report_title=get_settings().report_title(body.report_code),
             status=status,
             requested_at=now,
             requested_by=requested_by,

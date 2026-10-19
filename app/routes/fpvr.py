@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.responses import JSONResponse
 
 from app.core.candidates import CandidateTokenError
-from app.core.obo import bearer_scheme, get_obo_token
+from app.core.http_logging import current_request_id, gateway_error, log_failure
 from app.core.obo import bearer_scheme, get_obo_token
 from app.core.sql import WarehouseNotConfiguredError
 from app.models import ErrorResponse
