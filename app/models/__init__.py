@@ -86,7 +86,6 @@ __all__ = [
     "FPVRRequestCreate",
     "HealthResponse",
     "MeResponse",
-    "ReportCode",
     "RequestStatusValue",
     "SubjectCandidate",
     "SubjectIdentity",

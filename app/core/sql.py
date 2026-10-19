@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import os
 import time
 from typing import Any
 from urllib.error import HTTPError, URLError
@@ -113,19 +112,19 @@ def execute_statement(
 
 
 def workspace_host() -> str:
-    """Return the Databricks workspace host from ``DATABRICKS_HOST``.
+    """Return the Databricks workspace host from settings.
+
+    ``DATABRICKS_HOST`` overrides ``databricks.host`` in ``report-config.yaml``.
 
     Returns:
         Absolute ``https://`` workspace URL with no trailing slash.
 
     Raises:
-        WarehouseNotConfiguredError: If ``DATABRICKS_HOST`` is empty.
+        WarehouseNotConfiguredError: If the host is empty after loading settings.
     """
-    host = os.getenv("DATABRICKS_HOST", "").rstrip("/")
+    host = get_settings().workspace_host.strip().rstrip("/")
     if not host:
-        raise WarehouseNotConfiguredError("DATABRICKS_HOST is not set")
-    if not host.startswith(("http://", "https://")):
-        host = f"https://{host}"
+        raise WarehouseNotConfiguredError("Databricks workspace host is not set")
     return host
 
 

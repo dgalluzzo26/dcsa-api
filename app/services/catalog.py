@@ -5,9 +5,8 @@ from __future__ import annotations
 from typing import Any
 
 from app import __version__
-from app.core.config import get_settings
+from app.core.config import ReportConfig, get_settings
 from app.core.sql import WarehouseNotConfiguredError, workspace_host
-from app.models.fpvr import ReportCode
 from app.models.report_contract import (
     SECTION_ROW_MODELS,
     ApiCatalog,
@@ -15,9 +14,6 @@ from app.models.report_contract import (
     CatalogField,
     CatalogReport,
     CatalogScenario,
-    REPORT_READINESS,
-    REPORT_SOURCES,
-    report_title,
 )
 
 _SAMPLE_REQUEST_ID = "7c2e1a8f-4b0d-4e9a-9f31-2a6c8d5e1b04"
@@ -92,28 +88,48 @@ def _json_type(schema: dict[str, Any]) -> tuple[str, bool]:
     return str(schema.get("type") or "string"), schema.get("type") == "null"
 
 
-def _fields_for_section(section: str) -> list[CatalogField]:
-    """List public JSON fields for one report section.
+def _public_columns(source_name: str) -> list[str]:
+    """Return JSON columns for a source (configured columns minus omitted).
 
     Args:
-        section: Logical source name.
+        source_name: YAML source key.
+
+    Returns:
+        Public column names in SELECT order.
+    """
+    source = get_settings().sources[source_name]
+    omit = set(source.omit_from_output)
+    return [name for name in source.columns if name not in omit]
+
+
+def _fields_for_source(source_name: str) -> list[CatalogField]:
+    """List public JSON fields for one configured source.
+
+    Args:
+        source_name: YAML source key.
 
     Returns:
         Catalog field metadata.
     """
-    model = SECTION_ROW_MODELS[section]
-    props = model.model_json_schema().get("properties") or {}
-    required = set(model.model_json_schema().get("required") or [])
-    fields: list[CatalogField] = []
-    for name, spec in props.items():
-        json_type, nullable = _json_type(spec)
-        fields.append(
-            CatalogField(
+    public = _public_columns(source_name)
+    model = SECTION_ROW_MODELS.get(source_name)
+    schema_fields: dict[str, CatalogField] = {}
+    if model is not None:
+        props = model.model_json_schema().get("properties") or {}
+        required = set(model.model_json_schema().get("required") or [])
+        for name, spec in props.items():
+            json_type, nullable = _json_type(spec)
+            schema_fields[name] = CatalogField(
                 name=name,
                 type=json_type,
                 nullable=nullable or name not in required,
             )
-        )
+    fields: list[CatalogField] = []
+    for name in public:
+        if name in schema_fields:
+            fields.append(schema_fields[name])
+        else:
+            fields.append(CatalogField(name=name, type="string", nullable=True))
     return fields
 
 
@@ -121,12 +137,17 @@ def _example_envelope(code: ReportCode) -> dict[str, Any]:
     """Build a sample nested report body for one FPVR code.
 
     Args:
-        code: FPVR report code.
+        report_code: YAML report key.
 
     Returns:
         Example JSON matching ``FPVRReportResponse``.
     """
-    data = {source: [_SAMPLE_ROWS[source]] for source in REPORT_SOURCES[code]}
+    settings = get_settings()
+    report = settings.reports[report_code]
+    data = {
+        section_name: [_sample_row(section.source)]
+        for section_name, section in report.sections.items()
+    }
     return {
         "code": code.value,
         "title": report_title(code),
@@ -141,17 +162,21 @@ def build_catalog() -> ApiCatalog:
     Returns:
         Typed catalog of APIs, scenarios, and per-report schemas.
     """
+    settings = get_settings()
     reports = []
-    for code in ReportCode:
-        sources = list(REPORT_SOURCES[code])
+    for code, report in settings.reports.items():
+        source_names = [section.source for section in report.sections.values()]
         reports.append(
             CatalogReport(
                 report_code=code,
-                title=report_title(code),
-                sources=sources,
-                tables=[get_settings().source_table(s) for s in sources],
-                readiness=REPORT_READINESS[code],
-                data_fields={s: _fields_for_section(s) for s in sources},
+                title=report.name,
+                sources=source_names,
+                tables=[settings.source_table(name) for name in source_names],
+                readiness=_readiness_summary(report),
+                data_fields={
+                    section_name: _fields_for_source(section.source)
+                    for section_name, section in report.sections.items()
+                },
                 example_response=_example_envelope(code),
             )
         )
