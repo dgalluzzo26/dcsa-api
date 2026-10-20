@@ -7,7 +7,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from app.models.fpvr import REPORT_TITLES, ReportCode, RequestStatusValue
+from app.models.fpvr import RequestStatusValue
 from app.models.report_contract import CheckSectionRow, IdentitySectionRow, StatusSectionRow
 
 
