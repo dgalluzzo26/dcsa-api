@@ -54,23 +54,39 @@ jobs:
               kill "$API_PID" 2>/dev/null || true
               wait "$API_PID" 2>/dev/null || true
             fi
-            if (( status != 0 )); then
+            if (( status != 0 )) && [[ -f api.log ]]; then
               echo "API log:"
-              cat api.log 2>/dev/null || true
+              cat api.log
             fi
             exit "$status"
           }
           trap cleanup EXIT
 
-          token_response="$(
-            curl --fail --silent --show-error \
+          if [[ -z "${DATABRICKS_CLIENT_ID}" || -z "${DATABRICKS_CLIENT_SECRET}" ]]; then
+            echo "Repository secrets DATABRICKS_CLIENT_ID and DATABRICKS_CLIENT_SECRET must be set."
+            exit 1
+          fi
+
+          token_http_code="$(
+            curl -4 --silent --show-error --output token.json \
+              --write-out '%{http_code}' \
+              --request POST \
+              --url "${DATABRICKS_HOST}/oidc/v1/token" \
               --user "${DATABRICKS_CLIENT_ID}:${DATABRICKS_CLIENT_SECRET}" \
-              --data-urlencode "grant_type=client_credentials" \
-              --data-urlencode "scope=all-apis" \
-              "${DATABRICKS_HOST}/oidc/v1/token"
+              --header "Content-Type: application/x-www-form-urlencoded" \
+              --data "grant_type=client_credentials&scope=all-apis"
           )"
-          access_token="$(jq --exit-status --raw-output '.access_token' <<<"$token_response")"
-          echo "::add-mask::$access_token"
+          if [[ "${token_http_code}" != "200" ]]; then
+            echo "Databricks token endpoint returned HTTP ${token_http_code}:"
+            cat token.json
+            echo
+            echo "A 403 usually means this GitHub-hosted runner is blocked by the workspace IP access list, not that the client secret is wrong (that is 401)."
+            echo "Allow GitHub Actions IPs on ${DATABRICKS_HOST}, or run this job on a self-hosted runner that can reach the workspace."
+            exit 1
+          fi
+          access_token="$(jq --exit-status --raw-output '.access_token' token.json)"
+          echo "::add-mask::${access_token}"
+          rm -f token.json
 
           uvicorn app.main:app --host 127.0.0.1 --port 8000 >api.log 2>&1 &
           API_PID=$!
