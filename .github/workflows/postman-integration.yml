@@ -74,7 +74,7 @@ jobs:
               --url "${DATABRICKS_HOST}/oidc/v1/token" \
               --user "${DATABRICKS_CLIENT_ID}:${DATABRICKS_CLIENT_SECRET}" \
               --header "Content-Type: application/x-www-form-urlencoded" \
-              --data "grant_type=client_credentials&scope=all-apis"
+              --data "grant_type=client_credentials&scope=sql&scopes=jobs"
           )"
           if [[ "${token_http_code}" != "200" ]]; then
             echo "Databricks token endpoint returned HTTP ${token_http_code}:"
