@@ -1,0 +1,127 @@
+name: Postman integration
+
+on:
+  pull_request:
+    branches:
+      - dev
+
+permissions:
+  contents: read
+
+concurrency:
+  group: postman-integration-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  postman:
+    name: Run Postman test suite
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      DATABRICKS_HOST: https://govfood-dsca.cloud.databricks.us
+      DATABRICKS_CLIENT_ID: ${{ secrets.DATABRICKS_CLIENT_ID }}
+      DATABRICKS_CLIENT_SECRET: ${{ secrets.DATABRICKS_CLIENT_SECRET }}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install API dependencies
+        run: python -m pip install --requirement requirements.txt
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install Newman
+        run: npm install --global newman@6.2.1
+
+      - name: Start API and run Postman test suite
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+
+          cleanup() {
+            status=$?
+            if [[ -n "${API_PID:-}" ]]; then
+              kill "$API_PID" 2>/dev/null || true
+              wait "$API_PID" 2>/dev/null || true
+            fi
+            if (( status != 0 )) && [[ -f api.log ]]; then
+              echo "API log:"
+              cat api.log
+            fi
+            exit "$status"
+          }
+          trap cleanup EXIT
+
+          if [[ -z "${DATABRICKS_CLIENT_ID}" || -z "${DATABRICKS_CLIENT_SECRET}" ]]; then
+            echo "Repository secrets DATABRICKS_CLIENT_ID and DATABRICKS_CLIENT_SECRET must be set."
+            exit 1
+          fi
+
+          token_http_code="$(
+            curl -4 --silent --show-error --output token.json \
+              --write-out '%{http_code}' \
+              --request POST \
+              --url "${DATABRICKS_HOST}/oidc/v1/token" \
+              --user "${DATABRICKS_CLIENT_ID}:${DATABRICKS_CLIENT_SECRET}" \
+              --header "Content-Type: application/x-www-form-urlencoded" \
+              --data "grant_type=client_credentials&scope=sql&scopes=jobs"
+          )"
+          if [[ "${token_http_code}" != "200" ]]; then
+            echo "Databricks token endpoint returned HTTP ${token_http_code}:"
+            cat token.json
+            echo
+            echo "A 403 usually means this GitHub-hosted runner is blocked by the workspace IP access list, not that the client secret is wrong (that is 401)."
+            echo "Allow GitHub Actions IPs on ${DATABRICKS_HOST}, or run this job on a self-hosted runner that can reach the workspace."
+            exit 1
+          fi
+          access_token="$(jq --exit-status --raw-output '.access_token' token.json)"
+          echo "::add-mask::${access_token}"
+          rm -f token.json
+
+          uvicorn app.main:app --host 127.0.0.1 --port 8000 >api.log 2>&1 &
+          API_PID=$!
+
+          api_ready=false
+          for attempt in {1..30}; do
+            if curl --fail --silent http://127.0.0.1:8000/api/health >/dev/null; then
+              api_ready=true
+              break
+            fi
+            if ! kill -0 "$API_PID" 2>/dev/null; then
+              echo "The API process exited before becoming healthy."
+              exit 1
+            fi
+            sleep 1
+          done
+          if [[ "$api_ready" != true ]]; then
+            echo "The API did not become healthy within 30 seconds."
+            exit 1
+          fi
+
+          newman run DCSA-API.postman_collection.json \
+            --folder "Test Suite" \
+            --env-var "token=$access_token" \
+            --env-var "forwarded-email=github-actions@users.noreply.github.com" \
+            --reporters cli,junit \
+            --reporter-junit-export newman-results.xml
+
+      - name: Upload integration test diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: postman-integration-${{ github.run_id }}
+          path: |
+            api.log
+            newman-results.xml
+          if-no-files-found: warn
+          retention-days: 14

@@ -36,6 +36,7 @@ class RequestLogService:
         requested_at: str,
         ready_at: str | None,
         resolution_method: str,
+        user_token: str | None = None,
     ) -> None:
         """Insert a new official request.
 
@@ -51,8 +52,22 @@ class RequestLogService:
             requested_at: UTC timestamp string.
             ready_at: UTC timestamp if already ready.
             resolution_method: unique_match or candidate_id.
+            user_token: Caller token used when App SP credentials are unset (local).
+
+        Raises:
+            RequestLogError: If App SP auth or SQL fails.
         """
-        self._rows[request_id] = {
+        self._ensure_table(user_token=user_token)
+        sql = (
+            f"INSERT INTO {self._table} ("
+            "request_id, report_code, subject_ssn, first_name, last_name, "
+            "date_of_birth, status, requested_by, requested_at, ready_at, "
+            "resolution_method) VALUES ("
+            ":request_id, :report_code, :subject_ssn, :first_name, :last_name, "
+            ":date_of_birth, :status, :requested_by, :requested_at, :ready_at, "
+            ":resolution_method)"
+        )
+        params = {
             "request_id": request_id,
             "report_code": report_code,
             "subject_ssn": subject_ssn,
@@ -66,8 +81,9 @@ class RequestLogService:
             "resolution_method": resolution_method,
             "job_run_id": "",
         }
+        self._execute(sql, params, user_token=user_token)
 
-    def get(self, request_id: str) -> dict[str, str] | None:
+    def get(self, request_id: str, *, user_token: str | None = None) -> dict[str, str] | None:
         """Fetch one request log row.
 
         Args:
@@ -78,6 +94,30 @@ class RequestLogService:
         """
         row = self._rows.get(request_id)
         return None if row is None else dict(row)
+        self._ensure_table(user_token=user_token)
+        sql = (
+            f"SELECT request_id, report_code, subject_ssn, first_name, last_name, "
+            f"date_of_birth, status, requested_by, requested_at, ready_at, "
+            f"resolution_method FROM {self._table} WHERE request_id = :request_id "
+            "LIMIT 1"
+        )
+        rows = self._execute(sql, {"request_id": request_id}, user_token=user_token)
+        if not rows:
+            return None
+        keys = (
+            "request_id",
+            "report_code",
+            "subject_ssn",
+            "first_name",
+            "last_name",
+            "date_of_birth",
+            "status",
+            "requested_by",
+            "requested_at",
+            "ready_at",
+            "resolution_method",
+        )
+        return {k: ("" if v is None else str(v)) for k, v in zip(keys, rows[0])}
 
     def update_status(
         self,
@@ -85,6 +125,7 @@ class RequestLogService:
         status: RequestStatusValue,
         *,
         ready_at: str | None = None,
+        user_token: str | None = None,
     ) -> None:
         """Update request status.
 
@@ -111,6 +152,50 @@ class RequestLogService:
         if row is None:
             return
         row["job_run_id"] = job_run_id
+        if ready_at:
+            sql = (
+                f"UPDATE {self._table} SET status = :status, ready_at = :ready_at "
+                "WHERE request_id = :request_id"
+            )
+            params = {"status": status.value, "ready_at": ready_at, "request_id": request_id}
+        else:
+            sql = f"UPDATE {self._table} SET status = :status WHERE request_id = :request_id"
+            params = {"status": status.value, "request_id": request_id}
+        self._execute(sql, params, user_token=user_token)
+
+    def _ensure_table(self, *, user_token: str | None = None) -> None:
+        """Create the request log table if it does not exist."""
+        if self._ensured:
+            return
+        self._execute(_CREATE_SQL.format(table=self._table), None, user_token=user_token)
+        self._ensured = True
+
+    def _execute(
+        self, sql: str, params: dict[str, str] | None, *, user_token: str | None = None
+    ) -> list:
+        """Run SQL as the app service principal, or the caller when SP creds are unset.
+
+        Args:
+            sql: Statement text.
+            params: Named parameters.
+            user_token: Caller token used when DATABRICKS_CLIENT_ID/SECRET are missing.
+
+        Returns:
+            Result rows.
+
+        Raises:
+            RequestLogError: On auth or SQL failure.
+        """
+        try:
+            try:
+                token = get_app_sp_token()
+            except AppPrincipalError:
+                if not user_token:
+                    raise
+                token = user_token
+            return execute_statement(sql, params, access_token=token)
+        except (AppPrincipalError, WarehouseNotConfiguredError, SqlStatementError) as exc:
+            raise RequestLogError(str(exc)) from exc
 
 
 _request_log_service: RequestLogService | None = None
