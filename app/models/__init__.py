@@ -13,7 +13,7 @@ from app.models.fpvr import (
     FPVRReportResponse,
     FPVRRequestAccepted,
     FPVRRequestCreate,
-    ReportCode
+    ReportCode,
     RequestStatusValue,
     SubjectCandidate,
 )
