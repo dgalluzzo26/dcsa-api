@@ -169,10 +169,23 @@ def create_request(request: Request, body: FPVRRequestCreate, response: Response
             headers={"X-Request-Id": current_request_id(request)},
         )
     except WarehouseNotConfiguredError as e:
-        log_failure(request, e, step="warehouse", report_code=body.report_code.value)
+        log_failure(request, e, step="warehouse", report_code=body.report_code)
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(e)) from e
-    except (SubjectIdentityQueryError, ReportQueryError, RequestLogError) as e:
-        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(e)) from e
+    except SubjectIdentityQueryError as e:
+        raise gateway_error(
+            request, e, detail="FPVR request failed", step="identity_sql",
+            report_code=body.report_code,
+        ) from e
+    except ReportQueryError as e:
+        raise gateway_error(
+            request, e, detail="FPVR request failed", step="report_sql",
+            report_code=body.report_code,
+        ) from e
+    except RequestLogError as e:
+        raise gateway_error(
+            request, e, detail="FPVR request failed", step="request_log",
+            report_code=body.report_code,
+        ) from e
 
 
 @router.post(
@@ -292,8 +305,21 @@ def get_fpvr1_request(
     except WarehouseNotConfiguredError as e:
         log_failure(request, e, step="warehouse", fpvr_request_id=request_id)
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(e)) from e
-    except (SubjectIdentityQueryError, ReportQueryError, RequestLogError) as e:
-        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(e)) from e
+    except SubjectIdentityQueryError as e:
+        raise gateway_error(
+            request, e, detail="Status lookup failed", step="identity_sql",
+            fpvr_request_id=request_id,
+        ) from e
+    except ReportQueryError as e:
+        raise gateway_error(
+            request, e, detail="Status lookup failed", step="report_sql",
+            fpvr_request_id=request_id,
+        ) from e
+    except RequestLogError as e:
+        raise gateway_error(
+            request, e, detail="Status lookup failed", step="request_log",
+            fpvr_request_id=request_id,
+        ) from e
 
 
 @router.get(
@@ -335,5 +361,18 @@ def get_request(request: Request, request_id: str, response: Response) -> FPVRRe
     except WarehouseNotConfiguredError as e:
         log_failure(request, e, step="warehouse", fpvr_request_id=request_id)
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(e)) from e
-    except (SubjectIdentityQueryError, ReportQueryError, RequestLogError) as e:
-        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(e)) from e
+    except SubjectIdentityQueryError as e:
+        raise gateway_error(
+            request, e, detail="Report query failed", step="identity_sql",
+            fpvr_request_id=request_id,
+        ) from e
+    except ReportQueryError as e:
+        raise gateway_error(
+            request, e, detail="Report query failed", step="report_sql",
+            fpvr_request_id=request_id,
+        ) from e
+    except RequestLogError as e:
+        raise gateway_error(
+            request, e, detail="Report query failed", step="request_log",
+            fpvr_request_id=request_id,
+        ) from e

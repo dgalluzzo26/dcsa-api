@@ -12,11 +12,8 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi import APIRouter, HTTPException, Query, Request, Security, status
 from pydantic import ValidationError
 
-from app.core.obo import bearer_scheme, get_obo_token
 from app.core.http_logging import gateway_error, log_failure
-from app.core.obo import bearer_scheme, get_obo_token
-from app.core.obo import get_obo_token
-
+from app.core.obo import get_obo_token, bearer_scheme
 from app.core.sql import WarehouseNotConfiguredError
 from app.models import ErrorResponse, SubjectIdentityListResponse, SubjectIdentitySearch
 from app.services import SubjectIdentityQueryError, get_subject_identity_service

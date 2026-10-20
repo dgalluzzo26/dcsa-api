@@ -13,8 +13,12 @@ databricks:
   request_log_table: dcsa_catalog.dcsa_api.api_request_log
 
 # Sources are reusable across reports. A table may be an unqualified name,
-# schema.table, or catalog.schema.table. Every identifier (including columns)
-# must be validated against a strict allowlist before being placed in SQL.
+# schema.table, or catalog.schema.table. Optional catalog and schema fields
+# override the matching parts of databricks.default_catalog_schema. Do not
+# set catalog or schema together with a three-part table name, and do not
+# set schema together with a two-part table name. Every identifier
+# (including columns) must be validated against a strict allowlist before
+# being placed in SQL.
 sources:
   identity:
     table: subject_identity
@@ -102,6 +106,32 @@ sources:
       - LOAD_SEQ
     omit_from_output:
       - SSN
+  
+  awards:
+    schema: ryan_mock
+    table: usa_spending_mock_awards
+    filter:
+      column: contract_award_unique_key
+      parameter: subject_ssn
+    columns:
+      - contract_award_unique_key
+      - award_id_piid
+      - total_obligated_amount
+# Jobs are reusable Databricks Jobs API targets. Reports may reference one
+# via on_pending. Parameter values are literals or {{request_id}},
+# {{report_code}}, {{subject_ssn}}, {{subject_first_name}},
+# {{subject_last_name}}, or {{subject_date_of_birth}}. Quote placeholders.
+# Replace job_id with a workspace job the app service principal can run.
+jobs:
+  mock_async_job:
+    job_id: 141195585457411
+    parameters:
+      request_id: "{{request_id}}"
+      subject_ssn: "{{subject_ssn}}"
+      subject_first_name: "{{subject_first_name}}"
+      subject_last_name: "{{subject_last_name}}"
+      subject_date_of_birth: "{{subject_date_of_birth}}"
+
 
 # Report sections become keys in the response data object. Readiness uses a
 # small, validated vocabulary rather than executable expressions or raw SQL.
@@ -179,12 +209,29 @@ reports:
       mode: field_present
       section: status
       field: STATUS_CODE
-
+  
+  Awards:
+    name: Awards
+    sections:
+      awards:
+        source: awards
+      check:
+        source: check
+    readiness:
+      mode: any_section_non_empty
+      sections:
+        - awards
+        - check
+    on_pending:
+      job: mock_async_job
+    
 # New-report template (uncomment and customize):
 #
 #  sources:
 #    training:
 #      table: subject_training
+#      # catalog: other_catalog
+#      # schema: other_schema
 #      filter:
 #        column: SSN
 #        parameter: subject_ssn
@@ -204,11 +251,13 @@ reports:
 #      readiness:
 #        mode: section_non_empty
 #        section: training
+#      on_pending:
+#        job: enrich_investigation
 #
 # Future-loader guardrails:
 # - Validate this document against a versioned schema before serving requests.
-# - Require unique source names, report codes, and section names.
-# - Reject unknown source references, columns, and readiness modes.
+# - Require unique source names, report codes, job names, and section names.
+# - Reject unknown source references, columns, readiness modes, and job names.
 # - Allow only validated catalog/schema/table/column identifiers.
 # - Bind filter values as SQL parameters; never interpolate user values.
 # - Do not permit arbitrary SQL, joins, predicates, or expressions in YAML.

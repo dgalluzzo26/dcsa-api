@@ -20,7 +20,6 @@ class ReportCode(str, Enum):
     FPVR_6 = "FPVR-6"
     FPVR_7 = "FPVR-7"
 
-
 REPORT_TITLES: dict[ReportCode, str] = {
     ReportCode.FPVR_1: "Application Bundle",
     ReportCode.FPVR_2: "Investigation Summary",
@@ -30,8 +29,6 @@ REPORT_TITLES: dict[ReportCode, str] = {
     ReportCode.FPVR_6: "Human Capital",
     ReportCode.FPVR_7: "Favorable to Onboard",
 }
-
-
 class RequestStatusValue(str, Enum):
     """Lifecycle of an official FPVR request."""
 
@@ -57,7 +54,7 @@ class FPVRRequestCreate(BaseModel):
 
     model_config = ConfigDict(populate_by_name=True)
 
-    report_code: ReportCode = Field(examples=["FPVR-6"])
+    report_code: str = Field(min_length=1, examples=["FPVR-6"])
     ssn: str | None = None
     first_name: str | None = None
     last_name: str | None = None
