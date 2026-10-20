@@ -12,7 +12,7 @@ from app.models.fpvr import (
     AmbiguousSubjectResponse,
     FPVRReportResponse,
     FPVRRequestAccepted,
-    FPVRRequestCreate
+    FPVRRequestCreate,
     RequestStatusValue,
     SubjectCandidate,
 )
