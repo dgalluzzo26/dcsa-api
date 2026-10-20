@@ -1,0 +1,111 @@
+name: Postman integration
+
+on:
+  pull_request:
+    branches:
+      - dev
+
+permissions:
+  contents: read
+
+concurrency:
+  group: postman-integration-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  postman:
+    name: Run Postman test suite
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      DATABRICKS_HOST: https://govfood-dsca.cloud.databricks.us
+      DATABRICKS_CLIENT_ID: ${{ secrets.DATABRICKS_CLIENT_ID }}
+      DATABRICKS_CLIENT_SECRET: ${{ secrets.DATABRICKS_CLIENT_SECRET }}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install API dependencies
+        run: python -m pip install --requirement requirements.txt
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install Newman
+        run: npm install --global newman@6.2.1
+
+      - name: Start API and run Postman test suite
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+
+          cleanup() {
+            status=$?
+            if [[ -n "${API_PID:-}" ]]; then
+              kill "$API_PID" 2>/dev/null || true
+              wait "$API_PID" 2>/dev/null || true
+            fi
+            if (( status != 0 )); then
+              echo "API log:"
+              cat api.log 2>/dev/null || true
+            fi
+            exit "$status"
+          }
+          trap cleanup EXIT
+
+          token_response="$(
+            curl --fail --silent --show-error \
+              --user "${DATABRICKS_CLIENT_ID}:${DATABRICKS_CLIENT_SECRET}" \
+              --data-urlencode "grant_type=client_credentials" \
+              --data-urlencode "scope=all-apis" \
+              "${DATABRICKS_HOST}/oidc/v1/token"
+          )"
+          access_token="$(jq --exit-status --raw-output '.access_token' <<<"$token_response")"
+          echo "::add-mask::$access_token"
+
+          uvicorn app.main:app --host 127.0.0.1 --port 8000 >api.log 2>&1 &
+          API_PID=$!
+
+          api_ready=false
+          for attempt in {1..30}; do
+            if curl --fail --silent http://127.0.0.1:8000/api/health >/dev/null; then
+              api_ready=true
+              break
+            fi
+            if ! kill -0 "$API_PID" 2>/dev/null; then
+              echo "The API process exited before becoming healthy."
+              exit 1
+            fi
+            sleep 1
+          done
+          if [[ "$api_ready" != true ]]; then
+            echo "The API did not become healthy within 30 seconds."
+            exit 1
+          fi
+
+          newman run DCSA-API.postman_collection.json \
+            --folder "Test Suite" \
+            --env-var "token=$access_token" \
+            --env-var "forwarded-email=github-actions@users.noreply.github.com" \
+            --reporters cli,junit \
+            --reporter-junit-export newman-results.xml
+
+      - name: Upload integration test diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: postman-integration-${{ github.run_id }}
+          path: |
+            api.log
+            newman-results.xml
+          if-no-files-found: warn
+          retention-days: 14
