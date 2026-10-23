@@ -4,9 +4,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from app.core.config import ReportConfig, get_settings
+from app.core.config import ReportConfig, get_settings, RequestStatusValue
 from app.core.sql import SqlStatementError, WarehouseNotConfiguredError, execute_obo_statement
-from app.models.fpvr import RequestStatusValue
 from app.models.subject_identity import SubjectIdentity
 
 

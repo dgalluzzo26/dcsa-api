@@ -13,15 +13,19 @@ from app.models.fpvr import (
     FPVRReportResponse,
     FPVRRequestAccepted,
     FPVRRequestCreate,
-    ReportCode,
-    RequestStatusValue,
+    OfficialReport,
+    OfficialRequestAccepted,
+    OfficialRequestCreate,
     SubjectCandidate,
 )
-from app.models.fpvr1 import (
-    FPVR1Report,
-    FPVR1RequestAccepted,
-    FPVR1RequestCreate,
-)
+from app.models.reports.fpvr1 import FPVR1RequestAccepted
+from app.models.reports.fpvr2 import FPVR2RequestAccepted
+from app.models.reports.fpvr3 import FPVR3RequestAccepted
+from app.models.reports.fpvr4 import FPVR4RequestAccepted
+from app.models.reports.fpvr5 import FPVR5RequestAccepted
+from app.models.reports.fpvr6 import FPVR6RequestAccepted
+from app.models.reports.fpvr7 import FPVR7RequestAccepted
+from app.models.reports.awards import AWARDSRequestAccepted
 from app.models.report_contract import ApiCatalog
 from app.models.subject_identity import (
     SubjectIdentity,
@@ -75,17 +79,25 @@ class ErrorResponse(BaseModel):
 
 
 __all__ = [
+    "AWARDSRequestAccepted",
     "AmbiguousSubjectResponse",
     "ApiCatalog",
     "ErrorResponse",
-    "FPVR1Report",
     "FPVR1RequestAccepted",
-    "FPVR1RequestCreate",
+    "FPVR2RequestAccepted",
+    "FPVR3RequestAccepted",
+    "FPVR4RequestAccepted",
+    "FPVR5RequestAccepted",
+    "FPVR6RequestAccepted",
+    "FPVR7RequestAccepted",
     "FPVRReportResponse",
     "FPVRRequestAccepted",
     "FPVRRequestCreate",
     "HealthResponse",
     "MeResponse",
+    "OfficialReport",
+    "OfficialRequestAccepted",
+    "OfficialRequestCreate",
     "RequestStatusValue",
     "SubjectCandidate",
     "SubjectIdentity",

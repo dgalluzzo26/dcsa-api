@@ -5,16 +5,13 @@ from __future__ import annotations
 from uuid import uuid4
 
 from app.core.candidates import CandidateTokenError, sign_candidate_id, ssn_from_candidate_id
-from app.core.config import get_settings
+from app.core.config import get_settings, ReportCode, RequestStatusValue, REPORT_TITLES
 from app.core.jobs import JobKickoffError, run_job_now
 from app.models.fpvr import (
     AmbiguousSubjectResponse,
     FPVRReportResponse,
     FPVRRequestAccepted,
-    FPVRRequestCreate,
-    REPORT_TITLES,
-    ReportCode,
-    RequestStatusValue,
+    OfficialRequestCreate,
     SubjectCandidate,
 )
 from app.models.subject_identity import SubjectIdentity, SubjectIdentitySearch
@@ -53,15 +50,17 @@ class FPVRRequestService:
 
     def create(
         self,
-        body: FPVRRequestCreate,
+        body: OfficialRequestCreate,
         *,
+        report_code: str,
         user_token: str,
         requested_by: str | None,
     ) -> FPVRRequestAccepted:
         """Resolve the subject and log an official request if unique.
 
         Args:
-            body: Report code plus identity filters or candidate_id.
+            body: Identity filters or candidate_id.
+            report_code: Report implied by the request path.
             user_token: Caller token for OBO identity and report SQL.
             requested_by: Caller identity stored on the log row.
 
@@ -78,7 +77,7 @@ class FPVRRequestService:
         """
         subject, method = self._resolve(body, user_token=user_token)
         status, payload = get_report_assembler().assemble(
-            body.report_code, subject, user_token=user_token
+            report_code, subject, user_token=user_token
         )
         now = utc_now_iso()
         request_id = str(uuid4())
@@ -88,7 +87,7 @@ class FPVRRequestService:
         log = get_request_log_service()
         log.insert(
             request_id=request_id,
-            report_code=body.report_code,
+            report_code=report_code,
             subject_ssn=subject.SSN,
             first_name=subject.FIRST_NAME,
             last_name=subject.LAST_NAME,
@@ -103,7 +102,7 @@ class FPVRRequestService:
         if status == RequestStatusValue.pending:
             self._kickoff_pending_job(
                 request_id,
-                report_code=body.report_code,
+                report_code=report_code,
                 subject_ssn=subject.SSN,
                 subject_first_name=subject.FIRST_NAME,
                 subject_last_name=subject.LAST_NAME,
@@ -112,7 +111,7 @@ class FPVRRequestService:
             )
         report = None
         if status == RequestStatusValue.ready:
-            report = self._report(body.report_code, payload)
+            report = self._report(report_code, payload)
         return FPVRRequestAccepted(
             request_id=request_id,
             status=status,
@@ -199,7 +198,7 @@ class FPVRRequestService:
         )
 
     def _resolve(
-        self, body: FPVRRequestCreate, *, user_token: str
+        self, body: OfficialRequestCreate, *, user_token: str
     ) -> tuple[SubjectIdentity, str]:
         """Resolve a unique subject from the create body.
 

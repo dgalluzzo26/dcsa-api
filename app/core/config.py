@@ -6,10 +6,11 @@ import os
 import re
 from functools import lru_cache
 from pathlib import Path
-from typing import Literal
+from typing import Literal, Annotated
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator, AfterValidator, WithJsonSchema
+from enum import Enum
 
 _IDENT = re.compile(r"^[A-Za-z0-9_]+$")
 _SCHEMA = re.compile(r"^[A-Za-z0-9_]+\.[A-Za-z0-9_]+$")
@@ -300,6 +301,7 @@ class ReportConfig(BaseModel):
 
     model_config = ConfigDict(str_strip_whitespace=True)
 
+    normalized_code: str = None
     name: str = Field(min_length=1)
     sections: dict[str, ReportSectionConfig] = Field(min_length=1)
     readiness: ReadinessConfig
@@ -384,6 +386,14 @@ class YamlConfig(BaseModel):
                     f"{report.on_pending.job!r}"
                 )
         return self
+
+
+class RequestStatusValue(str, Enum):
+    """Lifecycle of an official FPVR request."""
+
+    pending = "pending"
+    ready = "ready"
+    failed = "failed"
 
 
 def _validate_readiness(
@@ -576,6 +586,8 @@ def get_settings() -> Settings:
     with _CONFIG_PATH.open(encoding="utf-8") as config_file:
         config = YamlConfig.model_validate(yaml.safe_load(config_file))
 
+    config.reports = {normalize_report_code(report_code): report for report_code, report in config.reports.items()}
+    
     injected_host = os.getenv("DATABRICKS_HOST", "").strip()
     injected_warehouse = os.getenv("DATABRICKS_WAREHOUSE_ID", "").strip()
     return Settings(
@@ -589,3 +601,24 @@ def get_settings() -> Settings:
         jobs=config.jobs,
         reports=config.reports,
     )
+
+def normalize_report_code(report_code: str) -> str:
+    return report_code.replace("-", "").lower()
+
+def _known_report_code(value: str) -> str:
+    if value not in get_settings().reports:
+        raise ValueError(f"Unknown report_code: {value}")
+    return value
+def _report_code_schema() -> dict:
+    return {"enum": list(get_settings().reports)}
+
+ReportCode = Annotated[
+    str,
+    AfterValidator(_known_report_code),
+    Field(min_length=1, examples=["FPVR-6"]),
+    WithJsonSchema(_report_code_schema()),
+]
+
+REPORT_TITLES: dict[ReportCode, str] = {
+    rc: get_settings().report_title(rc) for rc in get_settings().reports
+}

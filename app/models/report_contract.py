@@ -78,6 +78,15 @@ class SignalSectionRow(BaseModel):
     SIGNAL_TS: str | None = None
     LOAD_SEQ: str | None = None
 
+class AwardsSectionRow(BaseModel):
+    """Public awards section row (SSN omitted)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    contract_award_unique_key: str | None = None
+    award_id_piid: str | None = None
+    total_obligated_amount: str | None = None
+
 
 SECTION_ROW_MODELS: dict[str, type[BaseModel]] = {
     "identity": IdentitySectionRow,
@@ -85,6 +94,7 @@ SECTION_ROW_MODELS: dict[str, type[BaseModel]] = {
     "check": CheckSectionRow,
     "activity": ActivitySectionRow,
     "signal": SignalSectionRow,
+    "awards": AwardsSectionRow,
 }
 
 

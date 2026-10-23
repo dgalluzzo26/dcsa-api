@@ -193,7 +193,7 @@ def build_catalog() -> ApiCatalog:
         "requested_at": "2026-10-01T16:00:00Z",
         "requested_by": "sp-client-id",
         "resolution_method": "unique_match",
-        "report": _example_envelope(ReportCode.FPVR_6),
+        "report": _example_envelope("FPVR-6"),
     }
     pending = {
         "request_id": _SAMPLE_REQUEST_ID,
