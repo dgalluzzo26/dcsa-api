@@ -218,7 +218,7 @@ reports:
       check:
         source: check
     readiness:
-      mode: any_section_non_empty
+      mode: all_sections_non_empty
       sections:
         - awards
         - check

@@ -239,7 +239,13 @@ class ReadinessConfig(BaseModel):
 
     model_config = ConfigDict(str_strip_whitespace=True)
 
-    mode: Literal["always", "section_non_empty", "any_section_non_empty", "field_present"]
+    mode: Literal[
+        "always",
+        "section_non_empty",
+        "any_section_non_empty",
+        "all_sections_non_empty",
+        "field_present",
+    ]
     section: str | None = None
     sections: list[str] | None = None
     field: str | None = None
@@ -253,9 +259,9 @@ class ReadinessConfig(BaseModel):
             if not self.section:
                 raise ValueError("section_non_empty readiness requires section")
             return self
-        if self.mode == "any_section_non_empty":
+        if self.mode in ("any_section_non_empty", "all_sections_non_empty"):
             if not self.sections:
-                raise ValueError("any_section_non_empty readiness requires sections")
+                raise ValueError(f"{self.mode} readiness requires sections")
             return self
         if not self.section or not self.field:
             raise ValueError("field_present readiness requires section and field")
@@ -419,7 +425,7 @@ def _validate_readiness(
                 f"Report {code} readiness section {readiness.section!r} is not assembled"
             )
         return
-    if readiness.mode == "any_section_non_empty":
+    if readiness.mode in ("any_section_non_empty", "all_sections_non_empty"):
         unknown = [name for name in (readiness.sections or []) if name not in section_names]
         if unknown:
             raise ValueError(f"Report {code} readiness sections are not assembled: {unknown}")

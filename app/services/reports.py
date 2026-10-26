@@ -72,6 +72,8 @@ class ReportAssembler:
             return bool(data.get(readiness.section))
         if readiness.mode == "any_section_non_empty":
             return any(data.get(name) for name in (readiness.sections or []))
+        if readiness.mode == "all_sections_non_empty":
+            return all(data.get(name) for name in (readiness.sections or []))
         for row in data.get(readiness.section) or []:
             value = row.get(readiness.field)
             if value is not None and value != "":

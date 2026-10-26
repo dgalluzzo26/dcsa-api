@@ -1,7 +1,4 @@
 """Official FPVR request HTTP routes."""
-import importlib
-from pathlib import Path
-
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.responses import JSONResponse
 
@@ -15,6 +12,7 @@ from app.models.fpvr import (
     AmbiguousSubjectResponse,
     OfficialRequestCreate,
 )
+from app.models.reports.registry import ready_report_models
 
 from app.services.fpvr import (
     AmbiguousSubjectError,
@@ -67,40 +65,6 @@ def _service() -> FPVRRequestService:
         Shared service instance.
     """
     return get_fpvr_request_service()
-
-
-def _import_report_module(report_code: str):
-    try:
-        module = importlib.import_module(f"app.models.reports.{report_code.upper()}")
-    except ModuleNotFoundError:
-        try:
-            module = importlib.import_module(f"app.models.reports.{report_code.lower()}")
-        except ModuleNotFoundError:
-            raise ValueError(f"Unknown report code: {report_code}")
-    return module
-
-
-def _get_ready_reports():
-    """Return report module names under ``app.models.reports``.
-
-    The directory is resolved from this file so discovery works no matter
-    which working directory the process was started from.
-    """
-    dir_path = Path(__file__).resolve().parent.parent / "models" / "reports"
-
-    reports = [
-        item.stem
-        for item in dir_path.iterdir()
-        if item.is_file() and item.suffix == ".py" and not item.name.startswith("_")
-    ]
-
-    return {
-        report_code: getattr(
-            _import_report_module(report_code), f"{report_code.upper()}RequestAccepted"
-        )
-        for report_code in reports
-    }
-
 
 def _register_report_endpoint(report_code: str, response_model):
     report_title = get_settings().report_title(report_code)
@@ -214,5 +178,5 @@ def _register_report_endpoint(report_code: str, response_model):
             ) from e
 
 
-for report_code, response_model in _get_ready_reports().items():
+for report_code, response_model in ready_report_models().items():
     _register_report_endpoint(report_code, response_model)
