@@ -38,6 +38,16 @@ sources:
       - RECORD_VERSION
     omit_from_output:
       - SSN
+    fields:
+      FIRST_NAME: { type: string, nullable: false }
+      LAST_NAME: { type: string, nullable: false }
+      DATE_OF_BIRTH: { type: datetime, nullable: true }
+      PLACE_OF_BIRTH: { type: string, nullable: true }
+      SEX: { type: string, nullable: true }
+      CITIZENSHIP: { type: string, nullable: true }
+      MARITAL_STATUS: { type: string, nullable: true }
+      UPDATED_TS: { type: string, nullable: true }
+      RECORD_VERSION: { type: string, nullable: true }
 
   status:
     table: subject_status
@@ -57,6 +67,16 @@ sources:
       - RECORD_VERSION
     omit_from_output:
       - SSN
+    fields:
+      ORG_CODE: { type: string, nullable: true }
+      POSITION_TITLE: { type: string, nullable: true }
+      DUTY_LOCATION: { type: string, nullable: true }
+      RISK_TIER: { type: string, nullable: true }
+      ELIGIBILITY_LEVEL: { type: string, nullable: true }
+      STATUS_CODE: { type: string, nullable: true }
+      STATUS_EFFECTIVE_DATE: { type: string, nullable: true }
+      UPDATED_TS: { type: string, nullable: true }
+      RECORD_VERSION: { type: string, nullable: true }
 
   check:
     table: subject_check
@@ -74,6 +94,15 @@ sources:
       - LOAD_SEQ
     omit_from_output:
       - SSN
+    fields:
+      CHECK_ID: { type: string, nullable: true }
+      LOCATION_CODE: { type: string, nullable: true }
+      CHECK_TYPE: { type: string, nullable: true }
+      RESULT_CODE: { type: string, nullable: true }
+      RESULT_SCORE: { type: string, nullable: true }
+      CHECKED_TS: { type: string, nullable: true }
+      LOAD_SEQ: { type: string, nullable: true }
+      FAVORITE_COLOR: { type: string, nullable: true }
 
   activity:
     table: subject_activity
@@ -90,6 +119,13 @@ sources:
       - LOAD_SEQ
     omit_from_output:
       - SSN
+    fields:
+      ACTIVITY_ID: { type: string, nullable: true }
+      LOCATION_CODE: { type: string, nullable: true }
+      ACTIVITY_TYPE: { type: string, nullable: true }
+      DETAIL: { type: string, nullable: true }
+      EVENT_TS: { type: string, nullable: true }
+      LOAD_SEQ: { type: string, nullable: true }
 
   signal:
     table: subject_signal
@@ -106,17 +142,15 @@ sources:
       - LOAD_SEQ
     omit_from_output:
       - SSN
-  
-  awards:
-    schema: ryan_mock
-    table: usa_spending_mock_awards
-    filter:
-      column: contract_award_unique_key
-      parameter: subject_ssn
-    columns:
-      - contract_award_unique_key
-      - award_id_piid
-      - total_obligated_amount
+    fields:
+      SIGNAL_ID: { type: string, nullable: true }
+      LOCATION_CODE: { type: string, nullable: true }
+      SIGNAL_TYPE: { type: string, nullable: true }
+      SEVERITY: { type: string, nullable: true }
+      SIGNAL_TS: { type: string, nullable: true }
+      LOAD_SEQ: { type: string, nullable: true }
+    
+
 # Jobs are reusable Databricks Jobs API targets. Reports may reference one
 # via on_pending. Parameter values are literals or {{request_id}},
 # {{report_code}}, {{subject_ssn}}, {{subject_first_name}},
@@ -209,21 +243,6 @@ reports:
       mode: field_present
       section: status
       field: STATUS_CODE
-  
-  Awards:
-    name: Awards
-    sections:
-      awards:
-        source: awards
-      check:
-        source: check
-    readiness:
-      mode: all_sections_non_empty
-      sections:
-        - awards
-        - check
-    on_pending:
-      job: mock_async_job
     
 # New-report template (uncomment and customize):
 #
@@ -241,6 +260,9 @@ reports:
 #        - COMPLETED_DATE
 #      omit_from_output:
 #        - SSN
+#      fields:
+#        COURSE_NAME: { type: string, nullable: true }
+#        COMPLETED_DATE: { type: date, nullable: true }
 #
 #  reports:
 #    FPVR-8:

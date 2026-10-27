@@ -1,101 +1,70 @@
-"""Shared FPVR catalog schemas and optional known-section row models."""
+"""Shared FPVR catalog schemas and section-row models built from YAML sources."""
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
+from typing import Any
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, create_model
 
+from app.core.config import SourceConfig, get_settings
 
-class IdentitySectionRow(BaseModel):
-    """Public identity section row (SSN omitted)."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    FIRST_NAME: str
-    LAST_NAME: str
-    DATE_OF_BIRTH: datetime | None = None
-    PLACE_OF_BIRTH: str | None = None
-    SEX: str | None = None
-    CITIZENSHIP: str | None = None
-    MARITAL_STATUS: str | None = None
-    UPDATED_TS: str | None = None
-    RECORD_VERSION: str | None = None
-
-
-class StatusSectionRow(BaseModel):
-    """Public status section row (SSN omitted)."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    ORG_CODE: str | None = None
-    POSITION_TITLE: str | None = None
-    DUTY_LOCATION: str | None = None
-    RISK_TIER: str | None = None
-    ELIGIBILITY_LEVEL: str | None = None
-    STATUS_CODE: str | None = None
-    STATUS_EFFECTIVE_DATE: str | None = None
-    UPDATED_TS: str | None = None
-    RECORD_VERSION: str | None = None
-
-
-class CheckSectionRow(BaseModel):
-    """Public check section row (SSN omitted)."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    CHECK_ID: str | None = None
-    LOCATION_CODE: str | None = None
-    CHECK_TYPE: str | None = None
-    RESULT_CODE: str | None = None
-    RESULT_SCORE: str | None = None
-    CHECKED_TS: str | None = None
-    LOAD_SEQ: str | None = None
-
-
-class ActivitySectionRow(BaseModel):
-    """Public activity section row (SSN omitted)."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    ACTIVITY_ID: str | None = None
-    LOCATION_CODE: str | None = None
-    ACTIVITY_TYPE: str | None = None
-    DETAIL: str | None = None
-    EVENT_TS: str | None = None
-    LOAD_SEQ: str | None = None
-
-
-class SignalSectionRow(BaseModel):
-    """Public signal section row (SSN omitted)."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    SIGNAL_ID: str | None = None
-    LOCATION_CODE: str | None = None
-    SIGNAL_TYPE: str | None = None
-    SEVERITY: str | None = None
-    SIGNAL_TS: str | None = None
-    LOAD_SEQ: str | None = None
-
-class AwardsSectionRow(BaseModel):
-    """Public awards section row (SSN omitted)."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    contract_award_unique_key: str | None = None
-    award_id_piid: str | None = None
-    total_obligated_amount: str | None = None
-
-
-SECTION_ROW_MODELS: dict[str, type[BaseModel]] = {
-    "identity": IdentitySectionRow,
-    "status": StatusSectionRow,
-    "check": CheckSectionRow,
-    "activity": ActivitySectionRow,
-    "signal": SignalSectionRow,
-    "awards": AwardsSectionRow,
+_FIELD_TYPES: dict[str, type] = {
+    "string": str,
+    "integer": int,
+    "number": float,
+    "boolean": bool,
+    "date": date,
+    "datetime": datetime,
 }
+
+
+def build_section_row_models(
+    sources: dict[str, SourceConfig],
+) -> dict[str, type[BaseModel]]:
+    """Build one Pydantic row model per configured source.
+
+    Public columns (``columns`` minus ``omit_from_output``) become model fields.
+    YAML ``fields`` supply type and nullability; unspecified public columns are
+    nullable strings.
+
+    Args:
+        sources: Validated source configs keyed by source name.
+
+    Returns:
+        Mapping of source name to generated row model.
+    """
+    models: dict[str, type[BaseModel]] = {}
+    for name, source in sources.items():
+        omit = set(source.omit_from_output)
+        field_defs: dict[str, Any] = {}
+        for col in source.columns:
+            if col in omit:
+                continue
+            spec = source.fields.get(col)
+            py_type = _FIELD_TYPES[spec.type] if spec is not None else str
+            nullable = True if spec is None else spec.nullable
+            if nullable:
+                field_defs[col] = (py_type | None, None)
+            else:
+                field_defs[col] = (py_type, ...)
+        models[name] = create_model(
+            f"{name.title()}SectionRow",
+            __config__=ConfigDict(extra="forbid"),
+            **field_defs,
+        )
+    return models
+
+
+SECTION_ROW_MODELS: dict[str, type[BaseModel]] = build_section_row_models(
+    get_settings().sources
+)
+
+IdentitySectionRow = SECTION_ROW_MODELS["identity"]
+StatusSectionRow = SECTION_ROW_MODELS["status"]
+CheckSectionRow = SECTION_ROW_MODELS["check"]
+ActivitySectionRow = SECTION_ROW_MODELS["activity"]
+SignalSectionRow = SECTION_ROW_MODELS["signal"]
 
 
 class CatalogField(BaseModel):

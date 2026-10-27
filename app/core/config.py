@@ -172,6 +172,15 @@ class FilterConfig(BaseModel):
         return _require_ident(value, kind="filter column")
 
 
+class SourceFieldConfig(BaseModel):
+    """Public JSON type metadata for one source column."""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    type: Literal["string", "integer", "number", "boolean", "date", "datetime"] = "string"
+    nullable: bool = True
+
+
 class SourceConfig(BaseModel):
     """One reusable Unity Catalog table or view a report can query."""
 
@@ -183,6 +192,7 @@ class SourceConfig(BaseModel):
     filter: FilterConfig
     columns: list[str] = Field(min_length=1)
     omit_from_output: list[str] = Field(default_factory=list)
+    fields: dict[str, SourceFieldConfig] = Field(default_factory=dict)
 
     @field_validator("catalog")
     @classmethod
@@ -206,9 +216,17 @@ class SourceConfig(BaseModel):
         """Require every listed column name to be a SQL identifier."""
         return [_require_ident(value, kind="column") for value in values]
 
+    @field_validator("fields")
+    @classmethod
+    def field_names_are_identifiers(
+        cls, value: dict[str, SourceFieldConfig]
+    ) -> dict[str, SourceFieldConfig]:
+        """Require every fields key to be a SQL identifier."""
+        return {_require_ident(name, kind="field"): spec for name, spec in value.items()}
+
     @model_validator(mode="after")
     def validate_column_lists(self) -> "SourceConfig":
-        """Require filter/omit columns to be selected."""
+        """Require filter/omit/fields columns to be selected."""
         selected = set(self.columns)
         if self.filter.column not in selected:
             raise ValueError(
@@ -217,6 +235,12 @@ class SourceConfig(BaseModel):
         unknown = [name for name in self.omit_from_output if name not in selected]
         if unknown:
             raise ValueError(f"omit_from_output columns are not selected: {unknown}")
+        unknown_fields = [name for name in self.fields if name not in selected]
+        if unknown_fields:
+            raise ValueError(f"fields keys are not selected columns: {unknown_fields}")
+        omitted_fields = [name for name in self.fields if name in self.omit_from_output]
+        if omitted_fields:
+            raise ValueError(f"fields keys are omitted from output: {omitted_fields}")
         return self
 
 

@@ -56,10 +56,13 @@ A **source** is a reusable table or view. Multiple reports can share one source.
          - COMPLETED_DATE
        omit_from_output:
          - SSN                          # never returned in JSON
+       fields:                          # optional; omitted public columns are nullable strings
+         COURSE_NAME: { type: string, nullable: true }
+         COMPLETED_DATE: { type: date, nullable: true }
    ```
 
-2. Every identifier (catalog, schema, table, column) must be `[A-Za-z0-9_]+`. The filter column and any `omit_from_output` names must appear in `columns`.
-3. Optional: add a Pydantic row model in `app/models/report_contract.py` and register it on `SECTION_ROW_MODELS` under the same key as the YAML source (`training`). That tightens OpenAPI types and catalog field metadata. Without a model, public columns still work and are documented as nullable strings.
+2. Every identifier (catalog, schema, table, column, `fields` key) must be `[A-Za-z0-9_]+`. The filter column and any `omit_from_output` names must appear in `columns`. Each `fields` key must be a public column (in `columns`, not in `omit_from_output`).
+3. Optional `fields` sets catalog (and generated row-model) types. Allowed `type` values: `string`, `integer`, `number`, `boolean`, `date`, `datetime`. Without `fields`, public columns still work and are documented as nullable strings. Typed OpenAPI envelopes still live under `app/models/reports/`.
 4. Optional: add a sample row in `app/services/catalog.py` (`_SAMPLE_ROWS`) so `/help` examples look realistic.
 
 `awards` in `config.yaml` is a complete example of a source that lives in a non-default schema (`ryan_mock.usa_spending_mock_awards`).
@@ -103,7 +106,8 @@ A **report** is a named payload: sections (each pointing at a source), a readine
    Follow `app/models/reports/fpvr6.py` or `app/models/reports/awards.py`:
 
    - A `*ReportData` model whose fields are the **section names** from YAML, each `list[YourSectionRow]`.
-   - A `*RequestAccepted` subclass of `OfficialRequestAccepted[YourReportData]`.
+   - A `*Report` subclass of `OfficialReport[YourReportData]`.
+   - A `*RequestAccepted` subclass of `OfficialRequestAccepted[YourReport]`.
 
    Routes are discovered at import time by ``app/models/reports/registry.py`` from that directory. You do not add a new router by hand. After restart, you get:
 
