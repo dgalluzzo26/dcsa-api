@@ -6,10 +6,11 @@ import os
 import re
 from functools import lru_cache
 from pathlib import Path
-from typing import Literal
+from typing import Literal, Annotated
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator, AfterValidator, WithJsonSchema
+from enum import Enum
 
 _IDENT = re.compile(r"^[A-Za-z0-9_]+$")
 _SCHEMA = re.compile(r"^[A-Za-z0-9_]+\.[A-Za-z0-9_]+$")
@@ -171,6 +172,15 @@ class FilterConfig(BaseModel):
         return _require_ident(value, kind="filter column")
 
 
+class SourceFieldConfig(BaseModel):
+    """Public JSON type metadata for one source column."""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    type: Literal["string", "integer", "number", "boolean", "date", "datetime"] = "string"
+    nullable: bool = True
+
+
 class SourceConfig(BaseModel):
     """One reusable Unity Catalog table or view a report can query."""
 
@@ -182,6 +192,7 @@ class SourceConfig(BaseModel):
     filter: FilterConfig
     columns: list[str] = Field(min_length=1)
     omit_from_output: list[str] = Field(default_factory=list)
+    fields: dict[str, SourceFieldConfig] = Field(default_factory=dict)
 
     @field_validator("catalog")
     @classmethod
@@ -205,9 +216,17 @@ class SourceConfig(BaseModel):
         """Require every listed column name to be a SQL identifier."""
         return [_require_ident(value, kind="column") for value in values]
 
+    @field_validator("fields")
+    @classmethod
+    def field_names_are_identifiers(
+        cls, value: dict[str, SourceFieldConfig]
+    ) -> dict[str, SourceFieldConfig]:
+        """Require every fields key to be a SQL identifier."""
+        return {_require_ident(name, kind="field"): spec for name, spec in value.items()}
+
     @model_validator(mode="after")
     def validate_column_lists(self) -> "SourceConfig":
-        """Require filter/omit columns to be selected."""
+        """Require filter/omit/fields columns to be selected."""
         selected = set(self.columns)
         if self.filter.column not in selected:
             raise ValueError(
@@ -216,6 +235,12 @@ class SourceConfig(BaseModel):
         unknown = [name for name in self.omit_from_output if name not in selected]
         if unknown:
             raise ValueError(f"omit_from_output columns are not selected: {unknown}")
+        unknown_fields = [name for name in self.fields if name not in selected]
+        if unknown_fields:
+            raise ValueError(f"fields keys are not selected columns: {unknown_fields}")
+        omitted_fields = [name for name in self.fields if name in self.omit_from_output]
+        if omitted_fields:
+            raise ValueError(f"fields keys are omitted from output: {omitted_fields}")
         return self
 
 
@@ -238,7 +263,13 @@ class ReadinessConfig(BaseModel):
 
     model_config = ConfigDict(str_strip_whitespace=True)
 
-    mode: Literal["always", "section_non_empty", "any_section_non_empty", "field_present"]
+    mode: Literal[
+        "always",
+        "section_non_empty",
+        "any_section_non_empty",
+        "all_sections_non_empty",
+        "field_present",
+    ]
     section: str | None = None
     sections: list[str] | None = None
     field: str | None = None
@@ -252,9 +283,9 @@ class ReadinessConfig(BaseModel):
             if not self.section:
                 raise ValueError("section_non_empty readiness requires section")
             return self
-        if self.mode == "any_section_non_empty":
+        if self.mode in ("any_section_non_empty", "all_sections_non_empty"):
             if not self.sections:
-                raise ValueError("any_section_non_empty readiness requires sections")
+                raise ValueError(f"{self.mode} readiness requires sections")
             return self
         if not self.section or not self.field:
             raise ValueError("field_present readiness requires section and field")
@@ -300,6 +331,7 @@ class ReportConfig(BaseModel):
 
     model_config = ConfigDict(str_strip_whitespace=True)
 
+    normalized_code: str = None
     name: str = Field(min_length=1)
     sections: dict[str, ReportSectionConfig] = Field(min_length=1)
     readiness: ReadinessConfig
@@ -386,6 +418,14 @@ class YamlConfig(BaseModel):
         return self
 
 
+class RequestStatusValue(str, Enum):
+    """Lifecycle of an official FPVR request."""
+
+    pending = "pending"
+    ready = "ready"
+    failed = "failed"
+
+
 def _validate_readiness(
     code: str, report: ReportConfig, sources: dict[str, SourceConfig]
 ) -> None:
@@ -409,7 +449,7 @@ def _validate_readiness(
                 f"Report {code} readiness section {readiness.section!r} is not assembled"
             )
         return
-    if readiness.mode == "any_section_non_empty":
+    if readiness.mode in ("any_section_non_empty", "all_sections_non_empty"):
         unknown = [name for name in (readiness.sections or []) if name not in section_names]
         if unknown:
             raise ValueError(f"Report {code} readiness sections are not assembled: {unknown}")
@@ -566,7 +606,7 @@ class Settings(BaseModel):
         return self.jobs[report.on_pending.job]
 
 
-@lru_cache
+#@lru_cache
 def get_settings() -> Settings:
     """Load and cache process-wide settings from the repository YAML file.
 
@@ -576,6 +616,8 @@ def get_settings() -> Settings:
     with _CONFIG_PATH.open(encoding="utf-8") as config_file:
         config = YamlConfig.model_validate(yaml.safe_load(config_file))
 
+    config.reports = {normalize_report_code(report_code): report for report_code, report in config.reports.items()}
+    
     injected_host = os.getenv("DATABRICKS_HOST", "").strip()
     injected_warehouse = os.getenv("DATABRICKS_WAREHOUSE_ID", "").strip()
     return Settings(
@@ -589,3 +631,24 @@ def get_settings() -> Settings:
         jobs=config.jobs,
         reports=config.reports,
     )
+
+def normalize_report_code(report_code: str) -> str:
+    return report_code.replace("-", "").replace("_", "").lower()
+
+def _known_report_code(value: str) -> str:
+    if value not in get_settings().reports:
+        raise ValueError(f"Unknown report_code: {value}")
+    return value
+def _report_code_schema() -> dict:
+    return {"enum": list(get_settings().reports)}
+
+ReportCode = Annotated[
+    str,
+    AfterValidator(_known_report_code),
+    Field(min_length=1, examples=["FPVR-6"]),
+    WithJsonSchema(_report_code_schema()),
+]
+
+REPORT_TITLES: dict[ReportCode, str] = {
+    rc: get_settings().report_title(rc) for rc in get_settings().reports
+}

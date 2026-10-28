@@ -4,9 +4,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from app.core.config import ReportConfig, get_settings
+from app.core.config import ReportConfig, get_settings, RequestStatusValue
 from app.core.sql import SqlStatementError, WarehouseNotConfiguredError, execute_obo_statement
-from app.models.fpvr import RequestStatusValue
 from app.models.subject_identity import SubjectIdentity
 
 
@@ -73,6 +72,8 @@ class ReportAssembler:
             return bool(data.get(readiness.section))
         if readiness.mode == "any_section_non_empty":
             return any(data.get(name) for name in (readiness.sections or []))
+        if readiness.mode == "all_sections_non_empty":
+            return all(data.get(name) for name in (readiness.sections or []))
         for row in data.get(readiness.section) or []:
             value = row.get(readiness.field)
             if value is not None and value != "":

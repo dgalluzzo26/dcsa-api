@@ -13,21 +13,21 @@ from app.models.fpvr import (
     FPVRReportResponse,
     FPVRRequestAccepted,
     FPVRRequestCreate,
-    ReportCode,
-    RequestStatusValue,
+    OfficialReport,
+    OfficialRequestAccepted,
+    OfficialRequestCreate,
     SubjectCandidate,
 )
-from app.models.fpvr1 import (
-    FPVR1Report,
-    FPVR1RequestAccepted,
-    FPVR1RequestCreate,
-)
 from app.models.report_contract import ApiCatalog
+from app.models.reports.registry import discover_report_models
 from app.models.subject_identity import (
     SubjectIdentity,
     SubjectIdentityListResponse,
     SubjectIdentitySearch,
 )
+
+_REPORT_ACCEPTED = discover_report_models()
+globals().update({cls.__name__: cls for cls in _REPORT_ACCEPTED.values()})
 
 
 class HealthResponse(BaseModel):
@@ -78,17 +78,17 @@ __all__ = [
     "AmbiguousSubjectResponse",
     "ApiCatalog",
     "ErrorResponse",
-    "FPVR1Report",
-    "FPVR1RequestAccepted",
-    "FPVR1RequestCreate",
     "FPVRReportResponse",
     "FPVRRequestAccepted",
     "FPVRRequestCreate",
     "HealthResponse",
     "MeResponse",
-    "RequestStatusValue",
+    "OfficialReport",
+    "OfficialRequestAccepted",
+    "OfficialRequestCreate",
     "SubjectCandidate",
     "SubjectIdentity",
     "SubjectIdentityListResponse",
     "SubjectIdentitySearch",
+    *sorted(cls.__name__ for cls in _REPORT_ACCEPTED.values()),
 ]

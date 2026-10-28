@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from app.models.fpvr import RequestStatusValue
+from app.core.config import RequestStatusValue
 
 
 class RequestLogError(RuntimeError):

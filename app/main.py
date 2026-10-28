@@ -13,11 +13,13 @@ from fastapi.responses import JSONResponse
 from app import __version__
 from app.core.config import get_settings
 from app.core.http_logging import RequestIdMiddleware, configure_logging, current_request_id
+from app.models.reports.registry import warn_report_model_mismatches
 from app.routes import router
 from app.routes.catalog import help_page
 
 configure_logging()
 settings = get_settings()
+warn_report_model_mismatches()
 
 app = FastAPI(
     title="DCSA API",
