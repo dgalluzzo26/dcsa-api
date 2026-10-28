@@ -60,12 +60,6 @@ SECTION_ROW_MODELS: dict[str, type[BaseModel]] = build_section_row_models(
     get_settings().sources
 )
 
-IdentitySectionRow = SECTION_ROW_MODELS["identity"]
-StatusSectionRow = SECTION_ROW_MODELS["status"]
-CheckSectionRow = SECTION_ROW_MODELS["check"]
-ActivitySectionRow = SECTION_ROW_MODELS["activity"]
-SignalSectionRow = SECTION_ROW_MODELS["signal"]
-
 
 class CatalogField(BaseModel):
     """One JSON field in a report section row."""

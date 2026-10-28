@@ -102,7 +102,6 @@ sources:
       RESULT_SCORE: { type: string, nullable: true }
       CHECKED_TS: { type: string, nullable: true }
       LOAD_SEQ: { type: string, nullable: true }
-      FAVORITE_COLOR: { type: string, nullable: true }
 
   activity:
     table: subject_activity
@@ -149,7 +148,7 @@ sources:
       SEVERITY: { type: string, nullable: true }
       SIGNAL_TS: { type: string, nullable: true }
       LOAD_SEQ: { type: string, nullable: true }
-    
+
 
 # Jobs are reusable Databricks Jobs API targets. Reports may reference one
 # via on_pending. Parameter values are literals or {{request_id}},
@@ -243,7 +242,8 @@ reports:
       mode: field_present
       section: status
       field: STATUS_CODE
-    
+
+
 # New-report template (uncomment and customize):
 #
 #  sources:

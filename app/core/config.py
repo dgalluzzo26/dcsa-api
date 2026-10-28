@@ -606,7 +606,7 @@ class Settings(BaseModel):
         return self.jobs[report.on_pending.job]
 
 
-@lru_cache
+#@lru_cache
 def get_settings() -> Settings:
     """Load and cache process-wide settings from the repository YAML file.
 
@@ -633,7 +633,7 @@ def get_settings() -> Settings:
     )
 
 def normalize_report_code(report_code: str) -> str:
-    return report_code.replace("-", "").lower()
+    return report_code.replace("-", "").replace("_", "").lower()
 
 def _known_report_code(value: str) -> str:
     if value not in get_settings().reports:

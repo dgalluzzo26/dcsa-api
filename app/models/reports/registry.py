@@ -9,11 +9,13 @@ from types import ModuleType
 
 from pydantic import BaseModel
 
-from app.core.config import get_settings
+from app.core.config import get_settings, normalize_report_code
 
 _PACKAGE = "app.models.reports"
 _SKIP_STEMS = frozenset({"registry", "__init__"})
 logger = logging.getLogger("dcsa")
+
+REGISTERED_REPORTS: dict[str, type[BaseModel]] = {}
 
 
 def _report_module_stems() -> list[str]:
@@ -60,12 +62,9 @@ def _import_report_module(report_code: str) -> ModuleType:
         ValueError: If no matching module exists.
     """
     try:
-        return importlib.import_module(f"{_PACKAGE}.{report_code.upper()}")
+        return importlib.import_module(f"{_PACKAGE}.{report_code.lower()}")
     except ModuleNotFoundError:
-        try:
-            return importlib.import_module(f"{_PACKAGE}.{report_code.lower()}")
-        except ModuleNotFoundError as e:
-            raise ValueError(f"Unknown report code: {report_code}") from e
+        raise ValueError(f"Unknown report code: {report_code}") from e
 
 
 def discover_report_models() -> dict[str, type[BaseModel]]:
@@ -78,13 +77,16 @@ def discover_report_models() -> dict[str, type[BaseModel]]:
     Returns:
         Mapping of report code (file stem) to its ``*RequestAccepted`` model.
     """
-    return {
-        report_code: getattr(
-            _import_report_module(report_code),
-            _expected_request_accepted_name(report_code),
-        )
-        for report_code in _report_module_stems()
-    }
+    # return {
+    #     report_code: getattr(
+    #         _import_report_module(report_code),
+    #         _expected_request_accepted_name(report_code),
+    #     )
+    #     for report_code in _report_module_stems()
+    # }
+    for stem in _report_module_stems():
+        importlib.import_module(f"{_PACKAGE}.{stem}")
+    return dict(REGISTERED_REPORTS)
 
 
 def ready_report_models() -> dict[str, type[BaseModel]]:
@@ -127,3 +129,13 @@ def warn_report_model_mismatches() -> None:
             _PACKAGE,
             ", ".join(extra_modules),
         )
+
+def register_report(code: str):
+    def decorator(cls: type[BaseModel]) -> type[BaseModel]:
+        slug = normalize_report_code(code)
+        if slug in REGISTERED_REPORTS and REGISTERED_REPORTS[slug] is not cls:
+            raise ValueError(f"Duplicate report registration for {slug}")
+        REGISTERED_REPORTS[slug] = cls
+        cls.report_code = slug          # optional: stash on the class
+        return cls
+    return decorator

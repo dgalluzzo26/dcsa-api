@@ -8,9 +8,10 @@ from typing import Any, Generic, TypeVar
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.core.config import RequestStatusValue
-from app.models.report_contract import IdentitySectionRow
+from app.models.report_contract import SECTION_ROW_MODELS
 
 TData = TypeVar("TData")
+_SubjectRow = SECTION_ROW_MODELS["identity"]
 
 
 class OfficialRequestCreate(BaseModel):
@@ -94,7 +95,7 @@ class OfficialReport(BaseModel, Generic[TData]):
 
     code: str
     title: str
-    subject: IdentitySectionRow
+    subject: _SubjectRow
     data: TData
 
 
