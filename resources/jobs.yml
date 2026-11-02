@@ -1,0 +1,36 @@
+# Job definitions that replace config.yaml jobs.*.job_id.
+#
+# The API still names the job in reports.*.on_pending.job (mock_async_job)
+# and still supplies parameter *templates* in config.yaml. This file owns
+# the Databricks job itself: id after deploy, tasks, and job-level parameters.
+
+resources:
+  jobs:
+    mock_async_job:
+      name: "[${bundle.target}] dcsa-api mock async job"
+      description: >
+        Stand-in enrichment job. Replaces the hardcoded
+        config.yaml jobs.mock_async_job.job_id. Pending reports that set
+        on_pending.job: mock_async_job call jobs/run-now against this id.
+      parameters:
+        - name: request_id
+          default: ""
+        - name: report_code
+          default: ""
+        - name: subject_ssn
+          default: ""
+        - name: subject_first_name
+          default: ""
+        - name: subject_last_name
+          default: ""
+        - name: subject_date_of_birth
+          default: ""
+      tasks:
+        - task_key: mock_enrich
+          spark_python_task:
+            python_file: ../src/jobs/mock_async_job.py
+          environment_key: default
+      environments:
+        - environment_key: default
+          spec:
+            environment_version: "3"

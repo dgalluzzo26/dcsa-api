@@ -1,5 +1,9 @@
 # Databricks Apps runtime — FastAPI backend only.
 # OpenAPI UI: /docs  ·  ReDoc: /redoc  ·  OpenAPI JSON: /openapi.json
+#
+# valueFrom names must match resources/dcsa_api.app.yml resource names.
+# Catalog / request-log values must match databricks.yml variables
+# (bundle substitution does not rewrite this file).
 command:
   - uvicorn
   - app.main:app
@@ -11,3 +15,9 @@ command:
 env:
   - name: DATABRICKS_WAREHOUSE_ID
     valueFrom: sql-warehouse
+  - name: DATABRICKS_JOB_ID_MOCK_ASYNC_JOB
+    valueFrom: mock-async-job
+  - name: DATABRICKS_CATALOG_SCHEMA
+    value: dcsa_catalog.edladmin
+  - name: DATABRICKS_REQUEST_LOG_TABLE
+    value: dcsa_catalog.dcsa_api.api_request_log

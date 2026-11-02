@@ -14,6 +14,7 @@ from app.models.fpvr import (
 )
 from app.models.reports.registry import ready_report_models
 
+from app.services.dto_fpvr6 import maybe_map_accepted
 from app.services.fpvr import (
     AmbiguousSubjectError,
     FPVRRequestService,
@@ -88,7 +89,9 @@ def _register_report_endpoint(report_code: str, response_model):
             response.headers["Location"] = f"/api/v1/requests/{report_code}/{accepted.request_id}"
             if accepted.status == RequestStatusValue.pending:
                 response.headers["Retry-After"] = _RETRY_AFTER_SECONDS
-            return response_model.model_validate(accepted.model_dump())
+            return response_model.model_validate(
+                maybe_map_accepted(report_code, accepted.model_dump())
+            )
         except CandidateTokenError as e:
             raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(e)) from e
         except SubjectNotFoundError as e:
@@ -155,7 +158,9 @@ def _register_report_endpoint(report_code: str, response_model):
             accepted = _service().get(request_id, user_token=token)
             if accepted.status == RequestStatusValue.pending:
                 response.headers["Retry-After"] = _RETRY_AFTER_SECONDS
-            return response_model.model_validate(accepted.model_dump())
+            return response_model.model_validate(
+                maybe_map_accepted(report_code, accepted.model_dump())
+            )
         except OfficialRequestNotFoundError as e:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Request not found") from e
         except WarehouseNotConfiguredError as e:

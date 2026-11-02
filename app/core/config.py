@@ -532,8 +532,14 @@ def substitute_job_parameters(
 class Settings(BaseModel):
     """Process settings loaded from ``config.yaml``.
 
-    ``DATABRICKS_HOST`` and ``DATABRICKS_WAREHOUSE_ID`` override YAML when set.
-    Databricks Apps typically injects both.
+    Databricks Apps / the asset bundle override YAML when these are set:
+
+    - ``DATABRICKS_HOST`` — workspace host (``targets.*.workspace.host``)
+    - ``DATABRICKS_WAREHOUSE_ID`` — bound SQL warehouse
+    - ``DATABRICKS_CATALOG_SCHEMA`` — ``var.catalog``.``var.schema``
+    - ``DATABRICKS_REQUEST_LOG_TABLE`` — ``var.request_log_table``
+    - ``DATABRICKS_JOB_ID_<JOB_KEY>`` — ``resources.jobs.<job_key>.id``
+      (for example ``DATABRICKS_JOB_ID_MOCK_ASYNC_JOB``)
     """
 
     model_config = ConfigDict(str_strip_whitespace=True)
@@ -620,17 +626,39 @@ def get_settings() -> Settings:
     
     injected_host = os.getenv("DATABRICKS_HOST", "").strip()
     injected_warehouse = os.getenv("DATABRICKS_WAREHOUSE_ID", "").strip()
+    injected_catalog = os.getenv("DATABRICKS_CATALOG_SCHEMA", "").strip()
+    injected_log = os.getenv("DATABRICKS_REQUEST_LOG_TABLE", "").strip()
     return Settings(
         app_name=config.application.name,
         environment=config.application.environment,
         workspace_host=_normalize_workspace_host(injected_host or config.databricks.host),
         warehouse_id=injected_warehouse or config.databricks.warehouse_id,
-        catalog_schema=config.databricks.default_catalog_schema,
-        request_log_table=config.databricks.request_log_table,
+        catalog_schema=injected_catalog or config.databricks.default_catalog_schema,
+        request_log_table=injected_log or config.databricks.request_log_table,
         sources=config.sources,
-        jobs=config.jobs,
+        jobs=_jobs_with_injected_ids(config.jobs),
         reports=config.reports,
     )
+
+
+def _jobs_with_injected_ids(jobs: dict[str, JobConfig]) -> dict[str, JobConfig]:
+    """Replace YAML job ids with ``DATABRICKS_JOB_ID_<KEY>`` when the bundle sets them.
+
+    Args:
+        jobs: Job configs from ``config.yaml``.
+
+    Returns:
+        The same mapping, with ``job_id`` overwritten from the environment
+        for any key that has ``DATABRICKS_JOB_ID_<KEY>`` set.
+    """
+    out: dict[str, JobConfig] = {}
+    for name, job in jobs.items():
+        injected = os.getenv(f"DATABRICKS_JOB_ID_{name.upper()}", "").strip()
+        if injected:
+            out[name] = job.model_copy(update={"job_id": int(injected)})
+        else:
+            out[name] = job
+    return out
 
 def normalize_report_code(report_code: str) -> str:
     return report_code.replace("-", "").replace("_", "").lower()

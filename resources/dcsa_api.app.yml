@@ -8,7 +8,12 @@ resources:
         - sql
       resources:
         - name: sql-warehouse
-          description: Serverless Starter Warehouse for OBO subject identity queries
+          description: Replaces config.yaml databricks.warehouse_id (injected as DATABRICKS_WAREHOUSE_ID)
           sql_warehouse:
             id: ${var.warehouse_id}
             permission: CAN_USE
+        - name: mock-async-job
+          description: Replaces config.yaml jobs.mock_async_job.job_id (injected as DATABRICKS_JOB_ID_MOCK_ASYNC_JOB)
+          job:
+            id: ${resources.jobs.mock_async_job.id}
+            permission: CAN_MANAGE_RUN

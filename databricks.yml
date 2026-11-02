@@ -1,14 +1,27 @@
-# Declarative Automation Bundle — DCSA FastAPI backend (Databricks App).
+# Databricks Asset Bundle — workspace objects the API talks to.
 #
-# Target workspace: https://govfood-dsca.cloud.databricks.us/
+# Replaces hardcoded Databricks identity in config.yaml:
 #
-# Before first deploy, create/login a CLI profile for that host:
+#   config.yaml                              this bundle
+#   ---------------------------------------  --------------------------------------
+#   databricks.host                          targets.*.workspace.host
+#   databricks.warehouse_id                  var.warehouse_id + app sql-warehouse
+#   databricks.default_catalog_schema        var.catalog + var.schema
+#   databricks.request_log_table             var.request_log_table
+#   jobs.mock_async_job.job_id               resources.jobs.mock_async_job
+#
+# config.yaml still owns API/runtime mapping: sources, columns, readiness,
+# on_pending job *names*, and job parameter templates ({{request_id}}, …).
+#
+# On deploy the app receives:
+#   DATABRICKS_WAREHOUSE_ID          from the bound SQL warehouse
+#   DATABRICKS_JOB_ID_MOCK_ASYNC_JOB from resources.jobs.mock_async_job
+#   DATABRICKS_CATALOG_SCHEMA        from app.yaml (keep in sync with vars below)
+#   DATABRICKS_REQUEST_LOG_TABLE     from app.yaml (keep in sync with vars below)
+#
 #   databricks auth login --host https://govfood-dsca.cloud.databricks.us --profile govfood-dsca
-#
-# Then:
 #   databricks bundle validate -t dev --profile govfood-dsca
 #   databricks bundle deploy -t dev --profile govfood-dsca --auto-approve
-#   databricks apps deploy dcsa-api --profile govfood-dsca --auto-approve
 
 bundle:
   name: dcsa-api
@@ -18,8 +31,17 @@ include:
 
 variables:
   warehouse_id:
-    description: SQL warehouse used for OBO subject identity queries
+    description: Replaces config.yaml databricks.warehouse_id
     default: c56ad4dc84dcac90
+  catalog:
+    description: Catalog half of config.yaml databricks.default_catalog_schema
+    default: dcsa_catalog
+  schema:
+    description: Schema half of config.yaml databricks.default_catalog_schema
+    default: edladmin
+  request_log_table:
+    description: Replaces config.yaml databricks.request_log_table
+    default: dcsa_catalog.dcsa_api.api_request_log
 
 sync:
   exclude:
@@ -34,6 +56,9 @@ targets:
     workspace:
       host: https://govfood-dsca.cloud.databricks.us
       profile: govfood-dsca
+    # Target-specific overrides of config.yaml databricks.* go here, e.g.
+    # variables:
+    #   schema: edladmin_dev
 
   prod:
     mode: production

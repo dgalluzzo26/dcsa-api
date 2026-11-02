@@ -1,17 +1,18 @@
-"""Typed response models for the FPVR-6 Human Capital API."""
+"""Typed FPVR-6 response envelope using agency DTOs, not table columns."""
 
-from pydantic import BaseModel, Field
-
-from app.models.fpvr import OfficialRequestAccepted
-from app.models.report_contract import SECTION_ROW_MODELS
+from app.models.dto.fpvr6 import FPVR6ReportData, IdentityDto
+from app.models.fpvr import OfficialReport, OfficialRequestAccepted
 from app.models.reports.registry import register_report
 
-class FPVR6ReportData(BaseModel):
-    """FPVR-6 ``data`` sections: identity and status."""
 
-    identity: list[SECTION_ROW_MODELS["identity"]] = Field(default_factory=list)
-    status: list[SECTION_ROW_MODELS["status"]] = Field(default_factory=list)
+class FPVR6Report(OfficialReport[FPVR6ReportData]):
+    """FPVR-6 report. ``subject`` uses IdentityDto, not warehouse column names."""
+
+    subject: IdentityDto
+
 
 @register_report("FPVR-6")
 class FPVR6RequestAccepted(OfficialRequestAccepted[FPVR6ReportData]):
     """FPVR-6 request envelope. ``report`` is set when status is ready."""
+
+    report: FPVR6Report | None = None

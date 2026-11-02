@@ -1,4 +1,16 @@
 # Live application configuration. The settings loader validates this file at startup.
+#
+# Databricks workspace identity moved to the asset bundle (databricks.yml):
+#
+#   this file (local fallback)               bundle / app injects on deploy
+#   ---------------------------------------  --------------------------------------
+#   databricks.host                          targets.*.workspace.host + DATABRICKS_HOST
+#   databricks.warehouse_id                  var.warehouse_id + DATABRICKS_WAREHOUSE_ID
+#   databricks.default_catalog_schema        var.catalog.var.schema + DATABRICKS_CATALOG_SCHEMA
+#   databricks.request_log_table             var.request_log_table + DATABRICKS_REQUEST_LOG_TABLE
+#   jobs.mock_async_job.job_id               resources.jobs.mock_async_job + DATABRICKS_JOB_ID_MOCK_ASYNC_JOB
+#
+# Keep sources, columns, readiness, on_pending job *names*, and {{placeholders}} here.
 
 version: 1
 
@@ -6,6 +18,7 @@ application:
   name: dcsa-api
   environment: dev
 
+# Local-only fallbacks. Databricks Apps overrides these from the bundle.
 databricks:
   host: https://govfood-dsca.cloud.databricks.us
   warehouse_id: c56ad4dc84dcac90
@@ -150,16 +163,15 @@ sources:
       LOAD_SEQ: { type: string, nullable: true }
 
 
-# Jobs are reusable Databricks Jobs API targets. Reports may reference one
-# via on_pending. Parameter values are literals or {{request_id}},
-# {{report_code}}, {{subject_ssn}}, {{subject_first_name}},
-# {{subject_last_name}}, or {{subject_date_of_birth}}. Quote placeholders.
-# Replace job_id with a workspace job the app service principal can run.
+# Job *names* and parameter templates stay here so reports can say
+# on_pending.job: mock_async_job. The numeric job_id is a local fallback;
+# deploy injects DATABRICKS_JOB_ID_MOCK_ASYNC_JOB from resources/jobs.yml.
 jobs:
   mock_async_job:
     job_id: 141195585457411
     parameters:
       request_id: "{{request_id}}"
+      report_code: "{{report_code}}"
       subject_ssn: "{{subject_ssn}}"
       subject_first_name: "{{subject_first_name}}"
       subject_last_name: "{{subject_last_name}}"
@@ -223,6 +235,8 @@ reports:
     readiness:
       mode: always
 
+  # Warehouse wiring only. Agency JSON for this report is defined in
+  # app/models/dto/fpvr6.py and contracts/fpvr6.openapi.yaml — not here.
   FPVR-6:
     name: Human Capital
     sections:
