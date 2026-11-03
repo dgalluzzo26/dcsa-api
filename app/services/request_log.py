@@ -1,76 +1,26 @@
-"""App SP persistence for official FPVR requests."""
+"""In-memory official FPVR request store.
+
+Warehouse persistence is disabled for now so local runs do not depend on the
+app service principal or ``api_request_log``.
+"""
 
 from __future__ import annotations
 
-import re
 from datetime import datetime, timezone
 
-from app.core.app_auth import AppPrincipalError, get_app_sp_token
-from app.core.config import get_settings
-from app.core.sql import SqlStatementError, WarehouseNotConfiguredError, execute_statement
 from app.models.fpvr import FPVRRequestListQuery, ReportCode, RequestSource, RequestStatusValue
-
-_TABLE_NAME = re.compile(r"^[A-Za-z0-9_]+(\.[A-Za-z0-9_]+){2}$")
-
-_CREATE_SQL = """
-CREATE TABLE IF NOT EXISTS {table} (
-  request_id STRING,
-  report_code STRING,
-  subject_ssn STRING,
-  first_name STRING,
-  last_name STRING,
-  date_of_birth STRING,
-  status STRING,
-  requested_by STRING,
-  requested_at STRING,
-  ready_at STRING,
-  resolution_method STRING,
-  source STRING
-)
-USING DELTA
-"""
-
-_LOG_COLUMNS = (
-    "request_id",
-    "report_code",
-    "subject_ssn",
-    "first_name",
-    "last_name",
-    "date_of_birth",
-    "status",
-    "requested_by",
-    "requested_at",
-    "ready_at",
-    "resolution_method",
-    "source",
-)
 
 
 class RequestLogError(RuntimeError):
-    """Raised when the request log cannot be written or read as the app SP."""
+    """Raised when the request log cannot be written or read."""
 
 
 class RequestLogService:
-    """Insert and update official request rows as the app service principal.
+    """Keep official request rows in process memory."""
 
-    Attributes:
-        _table: Fully qualified request log table.
-        _ensured: Whether CREATE TABLE IF NOT EXISTS has been attempted.
-    """
-
-    def __init__(self, table: str) -> None:
-        """Initialize the log service.
-
-        Args:
-            table: Fully qualified ``catalog.schema.table`` name.
-
-        Raises:
-            ValueError: If ``table`` is not a three-part identifier.
-        """
-        if not _TABLE_NAME.match(table):
-            raise ValueError(f"Invalid request log table name: {table!r}")
-        self._table = table
-        self._ensured = False
+    def __init__(self) -> None:
+        """Initialize an empty in-memory log."""
+        self._rows: dict[str, dict[str, str]] = {}
 
     def insert(
         self,
@@ -104,22 +54,10 @@ class RequestLogService:
             ready_at: UTC timestamp if already ready.
             resolution_method: unique_match or candidate_id.
             source: internal or external; defaults to external.
-            user_token: Caller token used when App SP credentials are unset (local).
-
-        Raises:
-            RequestLogError: If App SP auth or SQL fails.
+            user_token: Unused; kept so callers match the warehouse-backed API.
         """
-        self._ensure_table(user_token=user_token)
-        sql = (
-            f"INSERT INTO {self._table} ("
-            "request_id, report_code, subject_ssn, first_name, last_name, "
-            "date_of_birth, status, requested_by, requested_at, ready_at, "
-            "resolution_method, source) VALUES ("
-            ":request_id, :report_code, :subject_ssn, :first_name, :last_name, "
-            ":date_of_birth, :status, :requested_by, :requested_at, :ready_at, "
-            ":resolution_method, :source)"
-        )
-        params = {
+        del user_token
+        self._rows[request_id] = {
             "request_id": request_id,
             "report_code": report_code,
             "subject_ssn": subject_ssn,
@@ -132,31 +70,22 @@ class RequestLogService:
             "ready_at": ready_at or "",
             "resolution_method": resolution_method,
             "source": source.value,
+            "job_run_id": "",
         }
-        self._execute(sql, params, user_token=user_token)
 
     def get(self, request_id: str, *, user_token: str | None = None) -> dict[str, str] | None:
         """Fetch one request log row.
 
         Args:
             request_id: Public request handle.
+            user_token: Unused; kept so callers match the warehouse-backed API.
 
         Returns:
             Column map or ``None`` if missing.
-
-        Raises:
-            RequestLogError: If App SP auth or SQL fails.
         """
-        self._ensure_table(user_token=user_token)
-        columns = ", ".join(_LOG_COLUMNS)
-        sql = (
-            f"SELECT {columns} FROM {self._table} WHERE request_id = :request_id "
-            "LIMIT 1"
-        )
-        rows = self._execute(sql, {"request_id": request_id}, user_token=user_token)
-        if not rows:
-            return None
-        return _map_log_row(rows[0])
+        del user_token
+        row = self._rows.get(request_id)
+        return None if row is None else dict(row)
 
     def list(
         self,
@@ -170,46 +99,40 @@ class RequestLogService:
         Args:
             query: Optional status, caller, requested_at range, resolution, source.
             report_code: When set, restrict to that report.
-            user_token: Caller token used when App SP credentials are unset (local).
+            user_token: Unused; kept so callers match the warehouse-backed API.
 
         Returns:
             Matching column maps, newest ``requested_at`` first.
-
-        Raises:
-            RequestLogError: If App SP auth or SQL fails.
         """
-        self._ensure_table(user_token=user_token)
-        clauses = ["1=1"]
-        params: dict[str, str] = {}
+        del user_token
+        rows = list(self._rows.values())
         if report_code is not None:
-            clauses.append("report_code = :report_code")
-            params["report_code"] = report_code.value
+            rows = [row for row in rows if row.get("report_code") == report_code.value]
         if query.status is not None:
-            clauses.append("status = :status")
-            params["status"] = query.status.value
+            rows = [row for row in rows if row.get("status") == query.status.value]
         if query.requested_by is not None:
-            clauses.append("requested_by = :requested_by")
-            params["requested_by"] = query.requested_by
+            rows = [row for row in rows if row.get("requested_by") == query.requested_by]
         if query.requested_at_after is not None:
-            clauses.append("requested_at >= :requested_at_after")
-            params["requested_at_after"] = _utc_iso(query.requested_at_after)
+            after = _utc_iso(query.requested_at_after)
+            rows = [row for row in rows if (row.get("requested_at") or "") >= after]
         if query.requested_at_before is not None:
-            clauses.append("requested_at <= :requested_at_before")
-            params["requested_at_before"] = _utc_iso(query.requested_at_before)
+            before = _utc_iso(query.requested_at_before)
+            rows = [row for row in rows if (row.get("requested_at") or "") <= before]
         if query.resolution_method is not None:
-            clauses.append("resolution_method = :resolution_method")
-            params["resolution_method"] = query.resolution_method
+            rows = [
+                row
+                for row in rows
+                if row.get("resolution_method") == query.resolution_method
+            ]
         if query.source is not None:
-            clauses.append("COALESCE(NULLIF(source, ''), 'external') = :source")
-            params["source"] = query.source.value
-        columns = ", ".join(_LOG_COLUMNS)
-        where = " AND ".join(clauses)
-        sql = (
-            f"SELECT {columns} FROM {self._table} WHERE {where} "
-            f"ORDER BY requested_at DESC LIMIT {int(query.limit)}"
-        )
-        rows = self._execute(sql, params or None, user_token=user_token)
-        return [_map_log_row(row) for row in rows]
+            wanted = query.source.value
+            rows = [
+                row
+                for row in rows
+                if (row.get("source") or RequestSource.external.value) == wanted
+            ]
+        rows.sort(key=lambda row: row.get("requested_at") or "", reverse=True)
+        return [dict(row) for row in rows[: int(query.limit)]]
 
     def update_status(
         self,
@@ -225,62 +148,27 @@ class RequestLogService:
             request_id: Public request handle.
             status: New status.
             ready_at: Ready timestamp when transitioning to ready.
-
-        Raises:
-            RequestLogError: If App SP auth or SQL fails.
+            user_token: Unused; kept so callers match the warehouse-backed API.
         """
-        if ready_at:
-            sql = (
-                f"UPDATE {self._table} SET status = :status, ready_at = :ready_at "
-                "WHERE request_id = :request_id"
-            )
-            params = {"status": status.value, "ready_at": ready_at, "request_id": request_id}
-        else:
-            sql = f"UPDATE {self._table} SET status = :status WHERE request_id = :request_id"
-            params = {"status": status.value, "request_id": request_id}
-        self._execute(sql, params, user_token=user_token)
-
-    def _ensure_table(self, *, user_token: str | None = None) -> None:
-        """Create the request log table if it does not exist."""
-        if self._ensured:
+        del user_token
+        row = self._rows.get(request_id)
+        if row is None:
             return
-        self._execute(_CREATE_SQL.format(table=self._table), None, user_token=user_token)
-        described = self._execute(f"DESCRIBE TABLE {self._table}", None, user_token=user_token)
-        columns = {str(row[0]).lower() for row in described if row}
-        if "source" not in columns:
-            self._execute(
-                f"ALTER TABLE {self._table} ADD COLUMN source STRING",
-                None,
-                user_token=user_token,
-            )
-        self._ensured = True
+        row["status"] = status.value
+        if ready_at:
+            row["ready_at"] = ready_at
 
-    def _execute(
-        self, sql: str, params: dict[str, str] | None, *, user_token: str | None = None
-    ) -> list:
-        """Run SQL as the app service principal, or the caller when SP creds are unset.
+    def set_job_run_id(self, request_id: str, job_run_id: str) -> None:
+        """Record the Databricks run started for a pending request.
 
         Args:
-            sql: Statement text.
-            params: Named parameters.
-            user_token: Caller token used when DATABRICKS_CLIENT_ID/SECRET are missing.
-
-        Returns:
-            Result rows.
-
-        Raises:
-            RequestLogError: On auth or SQL failure.
+            request_id: Public request handle.
+            job_run_id: Jobs API ``run_id``.
         """
-        try:
-            try:
-                token = get_app_sp_token()
-            except AppPrincipalError:
-                if not user_token:
-                    raise
-                token = user_token
-            return execute_statement(sql, params, access_token=token)
-        except (AppPrincipalError, WarehouseNotConfiguredError, SqlStatementError) as exc:
-            raise RequestLogError(str(exc)) from exc
+        row = self._rows.get(request_id)
+        if row is None:
+            return
+        row["job_run_id"] = job_run_id
 
 
 _request_log_service: RequestLogService | None = None
@@ -294,7 +182,7 @@ def get_request_log_service() -> RequestLogService:
     """
     global _request_log_service
     if _request_log_service is None:
-        _request_log_service = RequestLogService(get_settings().request_log_table)
+        _request_log_service = RequestLogService()
     return _request_log_service
 
 
@@ -319,18 +207,3 @@ def _utc_iso(value: datetime) -> str:
     if value.tzinfo is None:
         value = value.replace(tzinfo=timezone.utc)
     return value.astimezone(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
-
-
-def _map_log_row(row: list) -> dict[str, str]:
-    """Map a SELECT row onto named log columns.
-
-    Args:
-        row: Values in ``_LOG_COLUMNS`` order.
-
-    Returns:
-        Column map with empty strings for nulls and source defaulted to external.
-    """
-    mapped = {k: ("" if v is None else str(v)) for k, v in zip(_LOG_COLUMNS, row)}
-    if not mapped.get("source"):
-        mapped["source"] = RequestSource.external.value
-    return mapped

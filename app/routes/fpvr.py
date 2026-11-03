@@ -290,8 +290,21 @@ def _get_typed(
     except WarehouseNotConfiguredError as e:
         log_failure(request, e, step="warehouse", fpvr_request_id=request_id)
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(e)) from e
-    except (SubjectIdentityQueryError, ReportQueryError, RequestLogError) as e:
-        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(e)) from e
+    except SubjectIdentityQueryError as e:
+        raise gateway_error(
+            request, e, detail="Status lookup failed", step="identity_sql",
+            fpvr_request_id=request_id,
+        ) from e
+    except ReportQueryError as e:
+        raise gateway_error(
+            request, e, detail="Status lookup failed", step="report_sql",
+            fpvr_request_id=request_id,
+        ) from e
+    except RequestLogError as e:
+        raise gateway_error(
+            request, e, detail="Status lookup failed", step="request_log",
+            fpvr_request_id=request_id,
+        ) from e
 
 
 def _list_query(

@@ -114,7 +114,7 @@ def execute_statement(
 def workspace_host() -> str:
     """Return the Databricks workspace host from settings.
 
-    ``DATABRICKS_HOST`` overrides ``databricks.host`` in ``report-config.yaml``.
+    ``DATABRICKS_HOST`` overrides ``databricks.host`` in ``config.yaml``.
 
     Returns:
         Absolute ``https://`` workspace URL with no trailing slash.
