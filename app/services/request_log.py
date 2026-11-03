@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from app.core.app_auth import AppPrincipalError, get_app_sp_token
 from app.core.config import get_settings
 from app.core.sql import SqlStatementError, WarehouseNotConfiguredError, execute_statement
-from app.models.fpvr import RequestStatusValue
+from app.models.fpvr import FPVRRequestListQuery, ReportCode, RequestSource, RequestStatusValue
 
 _TABLE_NAME = re.compile(r"^[A-Za-z0-9_]+(\.[A-Za-z0-9_]+){2}$")
 
@@ -24,10 +24,26 @@ CREATE TABLE IF NOT EXISTS {table} (
   requested_by STRING,
   requested_at STRING,
   ready_at STRING,
-  resolution_method STRING
+  resolution_method STRING,
+  source STRING
 )
 USING DELTA
 """
+
+_LOG_COLUMNS = (
+    "request_id",
+    "report_code",
+    "subject_ssn",
+    "first_name",
+    "last_name",
+    "date_of_birth",
+    "status",
+    "requested_by",
+    "requested_at",
+    "ready_at",
+    "resolution_method",
+    "source",
+)
 
 
 class RequestLogError(RuntimeError):
@@ -70,6 +86,7 @@ class RequestLogService:
         requested_at: str,
         ready_at: str | None,
         resolution_method: str,
+        source: RequestSource = RequestSource.external,
         user_token: str | None = None,
     ) -> None:
         """Insert a new official request.
@@ -86,6 +103,7 @@ class RequestLogService:
             requested_at: UTC timestamp string.
             ready_at: UTC timestamp if already ready.
             resolution_method: unique_match or candidate_id.
+            source: internal or external; defaults to external.
             user_token: Caller token used when App SP credentials are unset (local).
 
         Raises:
@@ -96,10 +114,10 @@ class RequestLogService:
             f"INSERT INTO {self._table} ("
             "request_id, report_code, subject_ssn, first_name, last_name, "
             "date_of_birth, status, requested_by, requested_at, ready_at, "
-            "resolution_method) VALUES ("
+            "resolution_method, source) VALUES ("
             ":request_id, :report_code, :subject_ssn, :first_name, :last_name, "
             ":date_of_birth, :status, :requested_by, :requested_at, :ready_at, "
-            ":resolution_method)"
+            ":resolution_method, :source)"
         )
         params = {
             "request_id": request_id,
@@ -113,6 +131,7 @@ class RequestLogService:
             "requested_at": requested_at,
             "ready_at": ready_at or "",
             "resolution_method": resolution_method,
+            "source": source.value,
         }
         self._execute(sql, params, user_token=user_token)
 
@@ -129,29 +148,68 @@ class RequestLogService:
             RequestLogError: If App SP auth or SQL fails.
         """
         self._ensure_table(user_token=user_token)
+        columns = ", ".join(_LOG_COLUMNS)
         sql = (
-            f"SELECT request_id, report_code, subject_ssn, first_name, last_name, "
-            f"date_of_birth, status, requested_by, requested_at, ready_at, "
-            f"resolution_method FROM {self._table} WHERE request_id = :request_id "
+            f"SELECT {columns} FROM {self._table} WHERE request_id = :request_id "
             "LIMIT 1"
         )
         rows = self._execute(sql, {"request_id": request_id}, user_token=user_token)
         if not rows:
             return None
-        keys = (
-            "request_id",
-            "report_code",
-            "subject_ssn",
-            "first_name",
-            "last_name",
-            "date_of_birth",
-            "status",
-            "requested_by",
-            "requested_at",
-            "ready_at",
-            "resolution_method",
+        return _map_log_row(rows[0])
+
+    def list(
+        self,
+        query: FPVRRequestListQuery,
+        *,
+        report_code: ReportCode | None = None,
+        user_token: str | None = None,
+    ) -> list[dict[str, str]]:
+        """Return request log rows matching optional filters.
+
+        Args:
+            query: Optional status, caller, requested_at range, resolution, source.
+            report_code: When set, restrict to that report.
+            user_token: Caller token used when App SP credentials are unset (local).
+
+        Returns:
+            Matching column maps, newest ``requested_at`` first.
+
+        Raises:
+            RequestLogError: If App SP auth or SQL fails.
+        """
+        self._ensure_table(user_token=user_token)
+        clauses = ["1=1"]
+        params: dict[str, str] = {}
+        if report_code is not None:
+            clauses.append("report_code = :report_code")
+            params["report_code"] = report_code.value
+        if query.status is not None:
+            clauses.append("status = :status")
+            params["status"] = query.status.value
+        if query.requested_by is not None:
+            clauses.append("requested_by = :requested_by")
+            params["requested_by"] = query.requested_by
+        if query.requested_at_after is not None:
+            clauses.append("requested_at >= :requested_at_after")
+            params["requested_at_after"] = _utc_iso(query.requested_at_after)
+        if query.requested_at_before is not None:
+            clauses.append("requested_at <= :requested_at_before")
+            params["requested_at_before"] = _utc_iso(query.requested_at_before)
+        if query.resolution_method is not None:
+            clauses.append("resolution_method = :resolution_method")
+            params["resolution_method"] = query.resolution_method
+        if query.source is not None:
+            clauses.append("COALESCE(NULLIF(source, ''), 'external') = :source")
+            params["source"] = query.source.value
+        columns = ", ".join(_LOG_COLUMNS)
+        where = " AND ".join(clauses)
+        sql = (
+            f"SELECT {columns} FROM {self._table} WHERE {where} "
+            f"ORDER BY requested_at DESC LIMIT {int(query.limit)}"
         )
-        return {k: ("" if v is None else str(v)) for k, v in zip(keys, rows[0])}
+        rows = self._execute(sql, params or None, user_token=user_token)
+        return [_map_log_row(row) for row in rows]
 
     def update_status(
         self,
@@ -187,6 +245,14 @@ class RequestLogService:
         if self._ensured:
             return
         self._execute(_CREATE_SQL.format(table=self._table), None, user_token=user_token)
+        described = self._execute(f"DESCRIBE TABLE {self._table}", None, user_token=user_token)
+        columns = {str(row[0]).lower() for row in described if row}
+        if "source" not in columns:
+            self._execute(
+                f"ALTER TABLE {self._table} ADD COLUMN source STRING",
+                None,
+                user_token=user_token,
+            )
         self._ensured = True
 
     def _execute(
@@ -238,4 +304,33 @@ def utc_now_iso() -> str:
     Returns:
         Timestamp with a ``Z`` suffix.
     """
-    return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+    return _utc_iso(datetime.now(timezone.utc))
+
+
+def _utc_iso(value: datetime) -> str:
+    """Format a timestamp as UTC ISO-8601 with a ``Z`` suffix.
+
+    Args:
+        value: Aware or naive datetime. Naive values are treated as UTC.
+
+    Returns:
+        Second-precision UTC timestamp.
+    """
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+
+def _map_log_row(row: list) -> dict[str, str]:
+    """Map a SELECT row onto named log columns.
+
+    Args:
+        row: Values in ``_LOG_COLUMNS`` order.
+
+    Returns:
+        Column map with empty strings for nulls and source defaulted to external.
+    """
+    mapped = {k: ("" if v is None else str(v)) for k, v in zip(_LOG_COLUMNS, row)}
+    if not mapped.get("source"):
+        mapped["source"] = RequestSource.external.value
+    return mapped
