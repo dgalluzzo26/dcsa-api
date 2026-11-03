@@ -1,11 +1,11 @@
 {
   "info": {
-    "_postman_id": "38afe589-deba-476e-8bbf-1ab28513aee3",
+    "_postman_id": "2b43140c-92a2-4f2f-89e3-baa4d9ebbd50",
     "name": "DCSA-API",
     "description": "### Welcome to Postman! This is your first collection. \n\nCollections are your starting point for building and testing APIs. You can use this one to:\n\n• Group related requests\n• Test your API in real-world scenarios\n• Document and share your requests\n\nUpdate the name and overview whenever you’re ready to make it yours.\n\n[Learn more about Postman Collections.](https://learning.postman.com/docs/collections/collections-overview/)",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
     "_exporter_id": "58844765",
-    "_collection_link": "https://go.postman.co/collection/58844765-38afe589-deba-476e-8bbf-1ab28513aee3?source=collection_link"
+    "_collection_link": "https://go.postman.co/collection/58844765-2b43140c-92a2-4f2f-89e3-baa4d9ebbd50?source=collection_link"
   },
   "item": [
     {
@@ -999,7 +999,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"report_code\": \"FPVR-6\",\n  \"first_name\": \"Steven\",\n  \"last_name\": \"Kelly\",\n  \"date_of_birth\": \"1992-02-14\"\n}",
+              "raw": "{\n  \"first_name\": \"Steven\",\n  \"last_name\": \"Kelly\",\n  \"date_of_birth\": \"1992-02-14\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -1007,7 +1007,7 @@
               }
             },
             "url": {
-              "raw": "http://127.0.0.1:8000/api/v1/requests",
+              "raw": "http://127.0.0.1:8000/api/v1/requests/fpvr-1",
               "protocol": "http",
               "host": [
                 "127",
@@ -1019,7 +1019,8 @@
               "path": [
                 "api",
                 "v1",
-                "requests"
+                "requests",
+                "fpvr-1"
               ]
             },
             "description": "This is a POST request, submitting data to an API via the request body. This request submits JSON data, and the data is reflected in the response.\n\nA successful POST request typically returns a `200 OK` or `201 Created` response code."
@@ -1058,7 +1059,7 @@
               }
             ],
             "url": {
-              "raw": "http://127.0.0.1:8000/api/v1/requests/{{data_ready_request_id}}",
+              "raw": "http://127.0.0.1:8000/api/v1/requests/fpvr-1/{{data_ready_request_id}}",
               "protocol": "http",
               "host": [
                 "127",
@@ -1071,6 +1072,7 @@
                 "api",
                 "v1",
                 "requests",
+                "fpvr-1",
                 "{{data_ready_request_id}}"
               ]
             },
@@ -1111,7 +1113,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"report_code\": \"FPVR-2\",\n  \"first_name\": \"Charles\",\n  \"last_name\": \"Morgan\",\n  \"date_of_birth\": \"1978-10-13\"\n}",
+              "raw": "{\n  \"first_name\": \"Charles\",\n  \"last_name\": \"Morgan\",\n  \"date_of_birth\": \"1978-10-13\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -1119,7 +1121,7 @@
               }
             },
             "url": {
-              "raw": "http://127.0.0.1:8000/api/v1/requests",
+              "raw": "http://127.0.0.1:8000/api/v1/requests/fpvr-2",
               "protocol": "http",
               "host": [
                 "127",
@@ -1131,7 +1133,8 @@
               "path": [
                 "api",
                 "v1",
-                "requests"
+                "requests",
+                "fpvr-2"
               ]
             },
             "description": "This is a POST request, submitting data to an API via the request body. This request submits JSON data, and the data is reflected in the response.\n\nA successful POST request typically returns a `200 OK` or `201 Created` response code."
@@ -1170,7 +1173,7 @@
               }
             ],
             "url": {
-              "raw": "http://127.0.0.1:8000/api/v1/requests/{{response_pending_request_id}}",
+              "raw": "http://127.0.0.1:8000/api/v1/requests/fpvr-2/{{response_pending_request_id}}",
               "protocol": "http",
               "host": [
                 "127",
@@ -1183,6 +1186,7 @@
                 "api",
                 "v1",
                 "requests",
+                "fpvr-2",
                 "{{response_pending_request_id}}"
               ]
             },
