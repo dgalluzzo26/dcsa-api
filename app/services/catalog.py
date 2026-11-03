@@ -20,54 +20,54 @@ _SAMPLE_REQUEST_ID = "7c2e1a8f-4b0d-4e9a-9f31-2a6c8d5e1b04"
 _SAMPLE_CANDIDATE_ID = "cnd.opaque.token.example"
 
 _SAMPLE_SUBJECT: dict[str, Any] = {
-    "FIRST_NAME": "Kevin",
-    "LAST_NAME": "Jackson",
-    "DATE_OF_BIRTH": "1969-02-10T00:00:00",
-    "PLACE_OF_BIRTH": "VA",
-    "SEX": "M",
-    "CITIZENSHIP": "USA",
-    "MARITAL_STATUS": "M",
-    "UPDATED_TS": "2026-09-01T12:00:00",
-    "RECORD_VERSION": "1",
+    "first_name": "Kevin",
+    "last_name": "Jackson",
+    "date_of_birth": "1969-02-10T00:00:00",
+    "place_of_birth": "VA",
+    "sex": "M",
+    "citizenship": "USA",
+    "marital_status": "M",
+    "updated_ts": "2026-09-01T12:00:00",
+    "record_version": "1",
 }
 
 _SAMPLE_ROWS: dict[str, dict[str, Any]] = {
     "identity": dict(_SAMPLE_SUBJECT),
     "status": {
-        "ORG_CODE": "DCSA",
-        "POSITION_TITLE": "Analyst",
-        "DUTY_LOCATION": "Quantico, VA",
-        "RISK_TIER": "M",
-        "ELIGIBILITY_LEVEL": "S",
-        "STATUS_CODE": "ELIGIBLE",
-        "STATUS_EFFECTIVE_DATE": "2024-06-01",
-        "UPDATED_TS": "2026-09-01T12:00:00",
-        "RECORD_VERSION": "1",
+        "organization_code": "DCSA",
+        "position_title": "Analyst",
+        "duty_location": "Quantico, VA",
+        "risk_tier": "M",
+        "eligibility_level": "S",
+        "status_code": "ELIGIBLE",
+        "status_effective_date": "2024-06-01",
+        "updated_ts": "2026-09-01T12:00:00",
+        "record_version": "1",
     },
     "check": {
-        "CHECK_ID": "CHK-1001",
-        "LOCATION_CODE": "QAN",
-        "CHECK_TYPE": "NACI",
-        "RESULT_CODE": "FAVORABLE",
-        "RESULT_SCORE": "0",
-        "CHECKED_TS": "2024-05-15T08:00:00",
-        "LOAD_SEQ": "12",
+        "check_id": "CHK-1001",
+        "location_code": "QAN",
+        "check_type": "NACI",
+        "result_code": "FAVORABLE",
+        "result_score": "0",
+        "checked_ts": "2024-05-15T08:00:00",
+        "load_seq": "12",
     },
     "activity": {
-        "ACTIVITY_ID": "ACT-2001",
-        "LOCATION_CODE": "QAN",
-        "ACTIVITY_TYPE": "INVESTIGATION",
-        "DETAIL": "Case opened",
-        "EVENT_TS": "2024-04-02T14:30:00",
-        "LOAD_SEQ": "8",
+        "activity_id": "ACT-2001",
+        "location_code": "QAN",
+        "activity_type": "INVESTIGATION",
+        "detail": "Case opened",
+        "event_ts": "2024-04-02T14:30:00",
+        "load_seq": "8",
     },
     "signal": {
-        "SIGNAL_ID": "SIG-3001",
-        "LOCATION_CODE": "QAN",
-        "SIGNAL_TYPE": "CV_ALERT",
-        "SEVERITY": "LOW",
-        "SIGNAL_TS": "2025-11-03T09:12:00",
-        "LOAD_SEQ": "3",
+        "signal_id": "SIG-3001",
+        "location_code": "QAN",
+        "signal_type": "CV_ALERT",
+        "severity": "LOW",
+        "signal_ts": "2025-11-03T09:12:00",
+        "load_seq": "3",
     },
 }
 
@@ -89,17 +89,15 @@ def _json_type(schema: dict[str, Any]) -> tuple[str, bool]:
 
 
 def _public_columns(source_name: str) -> list[str]:
-    """Return JSON columns for a source (configured columns minus omitted).
+    """Return JSON field names for a source (mapped fields minus omitted).
 
     Args:
         source_name: YAML source key.
 
     Returns:
-        Public column names in SELECT order.
+        Public API field names in mapping.yml order.
     """
-    source = get_settings().sources[source_name]
-    omit = set(source.omit_from_output)
-    return [name for name in source.columns if name not in omit]
+    return get_settings().public_fields(source_name)
 
 
 def _fields_for_source(source_name: str) -> list[CatalogField]:
@@ -111,6 +109,7 @@ def _fields_for_source(source_name: str) -> list[CatalogField]:
     Returns:
         Catalog field metadata.
     """
+    settings = get_settings()
     public = _public_columns(source_name)
     model = SECTION_ROW_MODELS.get(source_name)
     schema_fields: dict[str, CatalogField] = {}
@@ -124,16 +123,61 @@ def _fields_for_source(source_name: str) -> list[CatalogField]:
                 type=json_type,
                 nullable=nullable or name not in required,
             )
+    lake_fields = settings.sources[source_name].fields
+    mapping = settings.column_mapping[source_name]
     fields: list[CatalogField] = []
     for name in public:
         if name in schema_fields:
             fields.append(schema_fields[name])
+            continue
+        column = mapping[name].column
+        lake_spec = lake_fields.get(column)
+        if lake_spec is not None:
+            fields.append(
+                CatalogField(name=name, type=lake_spec.type, nullable=lake_spec.nullable)
+            )
         else:
             fields.append(CatalogField(name=name, type="string", nullable=True))
     return fields
 
 
-def _example_envelope(code: ReportCode) -> dict[str, Any]:
+def _sample_row(source_name: str) -> dict[str, Any]:
+    """Return a sample public row for one source.
+
+    Args:
+        source_name: YAML source key.
+
+    Returns:
+        Example JSON object using API field names.
+    """
+    sample = _SAMPLE_ROWS.get(source_name, {})
+    return {name: sample.get(name) for name in _public_columns(source_name)}
+
+
+def _readiness_summary(report: ReportConfig) -> str:
+    """Describe YAML readiness as a short catalog string.
+
+    Args:
+        report: Configured report.
+
+    Returns:
+        Human-readable readiness summary.
+    """
+    readiness = report.readiness
+    if readiness.mode == "always":
+        return "Always ready after assemble"
+    if readiness.mode == "section_non_empty":
+        return f"Ready when section {readiness.section!r} is non-empty"
+    if readiness.mode == "any_section_non_empty":
+        return f"Ready when any of {list(readiness.sections or [])} is non-empty"
+    if readiness.mode == "all_sections_non_empty":
+        return f"Ready when all of {list(readiness.sections or [])} are non-empty"
+    return (
+        f"Ready when {readiness.section!r} has a non-empty {readiness.field!r} field"
+    )
+
+
+def _example_envelope(code: str) -> dict[str, Any]:
     """Build a sample nested report body for one FPVR code.
 
     Args:
@@ -143,14 +187,14 @@ def _example_envelope(code: ReportCode) -> dict[str, Any]:
         Example JSON matching ``FPVRReportResponse``.
     """
     settings = get_settings()
-    report = settings.reports[report_code]
+    report = settings.reports[code]
     data = {
         section_name: [_sample_row(section.source)]
         for section_name, section in report.sections.items()
     }
     return {
-        "code": code.value,
-        "title": report_title(code),
+        "code": code,
+        "title": settings.report_title(code),
         "subject": dict(_SAMPLE_SUBJECT),
         "data": data,
     }
@@ -181,8 +225,8 @@ def build_catalog() -> ApiCatalog:
             )
         )
 
+    sample_code = next(iter(settings.reports))
     create_body = {
-        "report_code": "FPVR-6",
         "first_name": "Kevin",
         "last_name": "Jackson",
         "date_of_birth": "1969-02-10",
@@ -193,7 +237,7 @@ def build_catalog() -> ApiCatalog:
         "requested_at": "2026-10-01T16:00:00Z",
         "requested_by": "sp-client-id",
         "resolution_method": "unique_match",
-        "report": _example_envelope("FPVR-6"),
+        "report": _example_envelope(sample_code),
     }
     pending = {
         "request_id": _SAMPLE_REQUEST_ID,
@@ -264,7 +308,7 @@ def build_catalog() -> ApiCatalog:
                     id="candidate_resubmit",
                     http_status=200,
                     summary="Caller resubmits an opaque candidate_id from a prior 409.",
-                    request={"report_code": "FPVR-6", "candidate_id": _SAMPLE_CANDIDATE_ID},
+                    request={"candidate_id": _SAMPLE_CANDIDATE_ID},
                     response={**accepted, "resolution_method": "candidate_id"},
                 ),
                 CatalogScenario(
@@ -280,13 +324,13 @@ def build_catalog() -> ApiCatalog:
                         "candidates": [
                             {
                                 "candidate_id": _SAMPLE_CANDIDATE_ID,
-                                "FIRST_NAME": "Kevin",
-                                "LAST_NAME": "Jackson",
-                                "DATE_OF_BIRTH": "1969-02-10T00:00:00",
-                                "PLACE_OF_BIRTH": "VA",
-                                "SEX": "M",
-                                "CITIZENSHIP": "USA",
-                                "MARITAL_STATUS": "M",
+                                "first_name": "Kevin",
+                                "last_name": "Jackson",
+                                "date_of_birth": "1969-02-10T00:00:00",
+                                "place_of_birth": "VA",
+                                "sex": "M",
+                                "citizenship": "USA",
+                                "marital_status": "M",
                             }
                         ],
                     },
@@ -302,7 +346,7 @@ def build_catalog() -> ApiCatalog:
                     id="missing_identity",
                     http_status=400,
                     summary="Body has neither candidate_id nor any identity field.",
-                    request={"report_code": "FPVR-6"},
+                    request={},
                     response={
                         "detail": [
                             {

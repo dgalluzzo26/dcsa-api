@@ -1,8 +1,7 @@
 """Subject identity request/response schemas.
 
-Schemas for lookups against ``dcsa_catalog.edladmin.subject_identity``. Response
-field names intentionally mirror the Unity Catalog column names so the API
-contract matches the source table.
+Response field names are API DTOs from ``mapping.yml``, not Unity Catalog
+column names.
 """
 
 from __future__ import annotations
@@ -83,31 +82,31 @@ class SubjectIdentitySearch(BaseModel):
 
 
 class SubjectIdentity(BaseModel):
-    """A single row from ``dcsa_catalog.edladmin.subject_identity``.
+    """A single identity row, including ssn for internal joins.
 
     Attributes:
-        SSN: Social Security Number.
-        FIRST_NAME: Subject's first name.
-        LAST_NAME: Subject's last name.
-        DATE_OF_BIRTH: Subject's date of birth.
-        PLACE_OF_BIRTH: Subject's place of birth.
-        SEX: Subject's recorded sex.
-        CITIZENSHIP: Subject's citizenship.
-        MARITAL_STATUS: Subject's marital status.
-        UPDATED_TS: Timestamp of the last update to the row.
-        RECORD_VERSION: Version number of the row.
+        ssn: Social Security Number. Returned on identity search only.
+        first_name: Subject's first name.
+        last_name: Subject's last name.
+        date_of_birth: Subject's date of birth.
+        place_of_birth: Subject's place of birth.
+        sex: Subject's recorded sex.
+        citizenship: Subject's citizenship.
+        marital_status: Subject's marital status.
+        updated_ts: Timestamp of the last update to the row.
+        record_version: Version number of the row.
     """
 
-    SSN: str
-    FIRST_NAME: str
-    LAST_NAME: str
-    DATE_OF_BIRTH: datetime | None = None
-    PLACE_OF_BIRTH: str | None = None
-    SEX: str | None = None
-    CITIZENSHIP: str | None = None
-    MARITAL_STATUS: str | None = None
-    UPDATED_TS: str | None = None
-    RECORD_VERSION: str | None = None
+    ssn: str
+    first_name: str
+    last_name: str
+    date_of_birth: datetime | None = None
+    place_of_birth: str | None = None
+    sex: str | None = None
+    citizenship: str | None = None
+    marital_status: str | None = None
+    updated_ts: str | None = None
+    record_version: str | None = None
 
 
 class SubjectIdentityListResponse(BaseModel):

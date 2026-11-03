@@ -5,13 +5,13 @@ from __future__ import annotations
 from uuid import uuid4
 
 from app.core.candidates import CandidateTokenError, sign_candidate_id, ssn_from_candidate_id
-from app.core.config import get_settings, ReportCode, RequestStatusValue, REPORT_TITLES
+from app.core.config import RequestStatusValue, get_settings
 from app.core.jobs import JobKickoffError, run_job_now
 from app.models.fpvr import (
     AmbiguousSubjectResponse,
     FPVRReportResponse,
     FPVRRequestAccepted,
-    OfficialRequestCreate,
+    FPVRRequestCreate,
     SubjectCandidate,
 )
 from app.models.subject_identity import SubjectIdentity, SubjectIdentitySearch
@@ -50,7 +50,7 @@ class FPVRRequestService:
 
     def create(
         self,
-        body: OfficialRequestCreate,
+        body: FPVRRequestCreate,
         *,
         report_code: str,
         user_token: str,
@@ -82,15 +82,15 @@ class FPVRRequestService:
         now = utc_now_iso()
         request_id = str(uuid4())
         dob = None
-        if subject.DATE_OF_BIRTH is not None:
-            dob = subject.DATE_OF_BIRTH.date().isoformat()
+        if subject.date_of_birth is not None:
+            dob = subject.date_of_birth.date().isoformat()
         log = get_request_log_service()
         log.insert(
             request_id=request_id,
             report_code=report_code,
-            subject_ssn=subject.SSN,
-            first_name=subject.FIRST_NAME,
-            last_name=subject.LAST_NAME,
+            subject_ssn=subject.ssn,
+            first_name=subject.first_name,
+            last_name=subject.last_name,
             date_of_birth=dob,
             status=status,
             requested_by=requested_by,
@@ -103,9 +103,9 @@ class FPVRRequestService:
             self._kickoff_pending_job(
                 request_id,
                 report_code=report_code,
-                subject_ssn=subject.SSN,
-                subject_first_name=subject.FIRST_NAME,
-                subject_last_name=subject.LAST_NAME,
+                subject_ssn=subject.ssn,
+                subject_first_name=subject.first_name,
+                subject_last_name=subject.last_name,
                 subject_date_of_birth=dob,
                 user_token=user_token,
             )
@@ -178,7 +178,7 @@ class FPVRRequestService:
 
     def _report(
         self,
-        report_code: ReportCode,
+        report_code: str,
         payload: dict,
     ) -> FPVRReportResponse:
         """Build the nested report object from an assembler payload.
@@ -192,13 +192,13 @@ class FPVRRequestService:
         """
         return FPVRReportResponse(
             code=report_code,
-            title=REPORT_TITLES[report_code],
+            title=get_settings().report_title(report_code),
             subject=payload["subject"],
             data=payload["sections"],
         )
 
     def _resolve(
-        self, body: OfficialRequestCreate, *, user_token: str
+        self, body: FPVRRequestCreate, *, user_token: str
     ) -> tuple[SubjectIdentity, str]:
         """Resolve a unique subject from the create body.
 
@@ -233,14 +233,14 @@ class FPVRRequestService:
         if result.total > 1:
             candidates = [
                 SubjectCandidate(
-                    candidate_id=sign_candidate_id(item.SSN),
-                    FIRST_NAME=item.FIRST_NAME,
-                    LAST_NAME=item.LAST_NAME,
-                    DATE_OF_BIRTH=item.DATE_OF_BIRTH,
-                    PLACE_OF_BIRTH=item.PLACE_OF_BIRTH,
-                    SEX=item.SEX,
-                    CITIZENSHIP=item.CITIZENSHIP,
-                    MARITAL_STATUS=item.MARITAL_STATUS,
+                    candidate_id=sign_candidate_id(item.ssn),
+                    first_name=item.first_name,
+                    last_name=item.last_name,
+                    date_of_birth=item.date_of_birth,
+                    place_of_birth=item.place_of_birth,
+                    sex=item.sex,
+                    citizenship=item.citizenship,
+                    marital_status=item.marital_status,
                 )
                 for item in result.items
             ]

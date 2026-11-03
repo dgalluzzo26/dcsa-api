@@ -528,7 +528,7 @@
               }
             },
             "url": {
-              "raw": "http://127.0.0.1:8000/api/v1/requests/fpvr-1",
+              "raw": "http://127.0.0.1:8000/api/v1/requests/FPVR-1",
               "protocol": "http",
               "host": [
                 "127",
@@ -569,7 +569,7 @@
               }
             ],
             "url": {
-              "raw": "http://127.0.0.1:8000/api/v1/requests/fpvr-1/{{request_id}}",
+              "raw": "http://127.0.0.1:8000/api/v1/requests/FPVR-1/{{request_id}}",
               "protocol": "http",
               "host": [
                 "127",

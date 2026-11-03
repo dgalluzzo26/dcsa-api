@@ -10,7 +10,7 @@ from app.core.sql import WarehouseNotConfiguredError
 from app.models import ErrorResponse
 from app.models.fpvr import (
     AmbiguousSubjectResponse,
-    OfficialRequestCreate,
+    FPVRRequestCreate,
 )
 from app.models.reports.registry import ready_report_models
 
@@ -76,7 +76,7 @@ def _register_report_endpoint(report_code: str, response_model):
         summary=f"Open an official {report_code} {report_title} request",
         responses=_ERROR_RESPONSES,
     )
-    def create_report_request(request: Request, body: OfficialRequestCreate, response: Response):
+    def create_report_request(request: Request, body: FPVRRequestCreate, response: Response):
         token = get_obo_token(request)
         try:
             accepted = _service().create(

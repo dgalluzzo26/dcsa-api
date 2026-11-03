@@ -9,13 +9,14 @@ FastAPI backend for Databricks Apps, deployed with a Declarative Automation Bund
 ```
 app/
   models/          # Pydantic request/response schemas
-    reports/       # One typed envelope per report (auto-registered as routes)
+    reports/       # Report envelope factory (OpenAPI models from config.yaml)
     report_contract.py  # Shared section-row models + catalog schemas
   services/        # Identity, report assembly, request log, catalog
   routes/          # HTTP endpoints (FPVR routes generated from report models)
   core/            # YAML settings, OBO SQL, jobs
   main.py          # FastAPI app (OpenAPI at /docs)
-config.yaml        # Sources, reports, jobs, warehouse (validated at startup)
+config.yaml        # Sources, reports, jobs, warehouse (SQL/catalog contract)
+mapping.yml        # Databricks column → API field names (validated at startup)
 app.yaml           # Databricks Apps process command
 databricks.yml
 resources/dcsa_api.app.yml
@@ -31,15 +32,15 @@ Callers open an official request for one report, then poll until it is ready.
 4. YAML **readiness** decides `ready` vs `pending`. Pending reports may start a Databricks job (`on_pending`) and later flip to ready on **GET**.
 5. The request log is written as the app service principal; subject and report reads run on-behalf-of the caller (ABAC/RBAC apply).
 
-`config.yaml` is the live contract. Invalid YAML fails startup rather than serving a half-configured API. Identifiers are allowlisted; filter values are bound as SQL parameters. YAML cannot express joins, extra predicates, or arbitrary SQL.
+`config.yaml` is the SQL/catalog contract (tables, selected columns, filters, reports, jobs). `mapping.yml` is the API rename layer: each selected lake column maps to one public JSON field. Pydantic models use those API names. Invalid YAML fails startup rather than serving a half-configured API. Identifiers are allowlisted; filter values are bound as SQL parameters. YAML cannot express joins, extra predicates, or arbitrary SQL.
 
-The public catalog (`/api/v1/catalog` and `/help`) is generated from the same config plus optional Pydantic row models.
+The public catalog (`/api/v1/catalog` and `/help`) is generated from config, mapping, and optional Pydantic row models.
 
 ## Adding a source
 
 A **source** is a reusable table or view. Multiple reports can share one source.
 
-1. Add an entry under `sources:` in `config.yaml`. Copy an existing source (for example `identity` or `awards`) and change names.
+1. Add an entry under `sources:` in `config.yaml`. Copy an existing source (for example `identity`) and change names.
 
    ```yaml
    sources:
@@ -54,24 +55,31 @@ A **source** is a reusable table or view. Multiple reports can share one source.
          - SSN
          - COURSE_NAME
          - COMPLETED_DATE
-       omit_from_output:
-         - SSN                          # never returned in JSON
-       fields:                          # optional; omitted public columns are nullable strings
+       fields:                          # optional; keyed by lake column
          COURSE_NAME: { type: string, nullable: true }
          COMPLETED_DATE: { type: date, nullable: true }
    ```
 
-2. Every identifier (catalog, schema, table, column, `fields` key) must be `[A-Za-z0-9_]+`. The filter column and any `omit_from_output` names must appear in `columns`. Each `fields` key must be a public column (in `columns`, not in `omit_from_output`).
-3. Optional `fields` sets catalog (and generated row-model) types. Allowed `type` values: `string`, `integer`, `number`, `boolean`, `date`, `datetime`. Without `fields`, public columns still work and are documented as nullable strings. Typed OpenAPI envelopes still live under `app/models/reports/`.
-4. Optional: add a sample row in `app/services/catalog.py` (`_SAMPLE_ROWS`) so `/help` examples look realistic.
+2. Add the same source under `sources:` in `mapping.yml`. Every selected lake column must map to exactly one API field. Set `omit: true` for join keys that must not appear in report JSON.
 
-`awards` in `config.yaml` is a complete example of a source that lives in a non-default schema (`ryan_mock.usa_spending_mock_awards`).
+   ```yaml
+   sources:
+     training:
+       ssn: { column: SSN, omit: true }
+       course_name: { column: COURSE_NAME }
+       completed_date: { column: COMPLETED_DATE }
+   ```
+
+3. Every identifier (catalog, schema, table, column, `fields` key, API field) must be `[A-Za-z0-9_]+`. The filter column must appear in `columns`. Each `fields` key must be a selected lake column. `field_present` readiness uses the **API** field name from `mapping.yml`.
+4. Optional `fields` in `config.yaml` sets catalog types for lake columns. Allowed `type` values: `string`, `integer`, `number`, `boolean`, `date`, `datetime`. Without `fields`, public columns still work and are documented as nullable strings.
+5. Add a Pydantic row model in `app/models/report_contract.py` and register it on `SECTION_ROW_MODELS` under the source name. Its public fields must match `mapping.yml` (startup fails if they disagree).
+6. Optional: add a sample row in `app/services/catalog.py` (`_SAMPLE_ROWS`) so `/help` examples look realistic. Use API field names, not lake columns.
 
 ## Adding a report
 
 A **report** is a named payload: sections (each pointing at a source), a readiness rule, and optional job kickoff.
 
-1. Add the report under `reports:` in `config.yaml`. The YAML key (`FPVR-8`, `Awards`, …) is normalized at load time to lowercase with hyphens removed (`fpvr8`, `awards`). That normalized code is the HTTP path segment and must match the Python module name in step 3.
+1. Add the report under `reports:` in `config.yaml`. The YAML key (`FPVR-8`, `Awards`, …) is the public report code. It is used exactly as written in the HTTP path and logs; no normalization is applied.
 
    ```yaml
    reports:
@@ -89,6 +97,17 @@ A **report** is a named payload: sections (each pointing at a source), a readine
        #   job: mock_async_job         # optional; key under jobs:
    ```
 
+   Jobs are defined under `jobs:` and referenced by name. Parameter values are literals or quoted placeholders: `{{request_id}}`, `{{report_code}}`, `{{subject_ssn}}`, `{{subject_first_name}}`, `{{subject_last_name}}`, `{{subject_date_of_birth}}`.
+
+   ```yaml
+   jobs:
+     mock_async_job:
+       job_id: 141195585457411
+       parameters:
+         request_id: "{{request_id}}"
+         subject_ssn: "{{subject_ssn}}"
+   ```
+
 2. Choose a **readiness** mode:
 
    | Mode | Extra fields | Ready when |
@@ -97,26 +116,20 @@ A **report** is a named payload: sections (each pointing at a source), a readine
    | `section_non_empty` | `section` | That section has at least one row |
    | `any_section_non_empty` | `sections` | Any listed section has rows |
    | `all_sections_non_empty` | `sections` | Every listed section has at least one row |
-   | `field_present` | `section`, `field` | Any row in that section has a non-empty field (field must be selected and not omitted) |
+   | `field_present` | `section`, `field` | Any row in that section has a non-empty API field (name from `mapping.yml`, not omitted) |
 
    If the report is pending and `on_pending.job` is set, the app starts that Databricks job once (idempotent on `request_id`) with allowlisted placeholders such as `{{request_id}}` and `{{subject_ssn}}`. Define the job under `jobs:` first. Callers poll GET until readiness passes.
 
-3. Add typed OpenAPI models so FastAPI can register the routes. Create `app/models/reports/{normalized_code}.py`. The file stem must be the normalized code (`fpvr8.py`, `awards.py`). Export `{STEM.upper()}RequestAccepted` (for `fpvr8` that is `FPVR8RequestAccepted`).
+3. If every section `source` already exists, no Python file is required. OpenAPI envelopes are built at startup from YAML sections and `SECTION_ROW_MODELS`. A new source still needs a row model (see [Adding a source](#adding-a-source)). Startup fails if a section source has no row model.
 
-   Follow `app/models/reports/fpvr6.py` or `app/models/reports/awards.py`:
+   Routes are registered from config by ``app/models/reports/registry.py``. After restart, you get:
 
-   - A `*ReportData` model whose fields are the **section names** from YAML, each `list[YourSectionRow]`.
-   - A `*Report` subclass of `OfficialReport[YourReportData]`.
-   - A `*RequestAccepted` subclass of `OfficialRequestAccepted[YourReport]`.
+   - `POST /api/v1/requests/{report_code}` (for example `/api/v1/requests/FPVR-8`)
+   - `GET /api/v1/requests/{report_code}/{request_id}`
 
-   Routes are discovered at import time by ``app/models/reports/registry.py`` from that directory. You do not add a new router by hand. After restart, you get:
-
-   - `POST /api/v1/requests/{normalized_code}`
-   - `GET /api/v1/requests/{normalized_code}/{request_id}`
+   The POST body is identity only (`ssn`, `first_name` / `last_name` / `date_of_birth`, or `candidate_id`). Report code is the path.
 
 4. Restart the app (settings are cached). Confirm the report appears in `/docs`, `/api/v1/catalog`, and `/help`. Invalid config fails at startup with a validation error.
-
-There is a commented template at the bottom of `config.yaml` with the same shape.
 
 ## Local run
 

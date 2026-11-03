@@ -1,0 +1,57 @@
+# Maps Unity Catalog columns (config.yaml sources.*.columns) to public API
+# field names. Pydantic models use the API names. Lake names stay in SQL.
+
+version: 1
+
+sources:
+  identity:
+    ssn: { column: SSN, omit: true }
+    first_name: { column: FIRST_NAME }
+    last_name: { column: LAST_NAME }
+    date_of_birth: { column: DATE_OF_BIRTH }
+    place_of_birth: { column: PLACE_OF_BIRTH }
+    sex: { column: SEX }
+    citizenship: { column: CITIZENSHIP }
+    marital_status: { column: MARITAL_STATUS }
+    updated_ts: { column: UPDATED_TS }
+    record_version: { column: RECORD_VERSION }
+
+  status:
+    ssn: { column: SSN, omit: true }
+    organization_code: { column: ORG_CODE }
+    position_title: { column: POSITION_TITLE }
+    duty_location: { column: DUTY_LOCATION }
+    risk_tier: { column: RISK_TIER }
+    eligibility_level: { column: ELIGIBILITY_LEVEL }
+    status_code: { column: STATUS_CODE }
+    status_effective_date: { column: STATUS_EFFECTIVE_DATE }
+    updated_ts: { column: UPDATED_TS }
+    record_version: { column: RECORD_VERSION }
+
+  check:
+    check_id: { column: CHECK_ID }
+    ssn: { column: SSN, omit: true }
+    location_code: { column: LOCATION_CODE }
+    check_type: { column: CHECK_TYPE }
+    result_code: { column: RESULT_CODE }
+    result_score: { column: RESULT_SCORE }
+    checked_ts: { column: CHECKED_TS }
+    load_seq: { column: LOAD_SEQ }
+
+  activity:
+    activity_id: { column: ACTIVITY_ID }
+    ssn: { column: SSN, omit: true }
+    location_code: { column: LOCATION_CODE }
+    activity_type: { column: ACTIVITY_TYPE }
+    detail: { column: DETAIL }
+    event_ts: { column: EVENT_TS }
+    load_seq: { column: LOAD_SEQ }
+
+  signal:
+    signal_id: { column: SIGNAL_ID }
+    ssn: { column: SSN, omit: true }
+    location_code: { column: LOCATION_CODE }
+    signal_type: { column: SIGNAL_TYPE }
+    severity: { column: SEVERITY }
+    signal_ts: { column: SIGNAL_TS }
+    load_seq: { column: LOAD_SEQ }

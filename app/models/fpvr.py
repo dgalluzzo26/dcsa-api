@@ -3,22 +3,28 @@
 from __future__ import annotations
 
 from datetime import date, datetime
-from typing import Any, Generic, TypeVar
+from enum import Enum
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from app.core.config import RequestStatusValue
-from app.models.report_contract import SECTION_ROW_MODELS
-
-TData = TypeVar("TData")
-_SubjectRow = SECTION_ROW_MODELS["identity"]
+from app.core.config import ReportCode
 
 
-class OfficialRequestCreate(BaseModel):
-    """Body for opening an official request. Report code is implied by the route.
+class RequestStatusValue(str, Enum):
+    """Lifecycle of an official FPVR request."""
 
-    Resolve a subject with SSN, or with first name + last name + date of birth
-    (SSN optional). If multiple people match, resubmit with ``candidate_id``.
+    pending = "pending"
+    ready = "ready"
+    failed = "failed"
+
+class FPVRRequestCreate(BaseModel):
+    """Body for opening an official FPVR request.
+
+    Report code is implied by the route. Resolve a subject with SSN, or with
+    first name + last name + date of birth (SSN optional). If multiple people
+    match, resubmit with ``candidate_id``. Extra keys such as ``report_code``
+    are ignored.
 
     Attributes:
         ssn: Optional Social Security Number.
@@ -65,7 +71,7 @@ class OfficialRequestCreate(BaseModel):
         return normalized
 
     @model_validator(mode="after")
-    def require_identity(self) -> OfficialRequestCreate:
+    def require_identity(self) -> "FPVRRequestCreate":
         """Require a candidate id or at least one identity field.
 
         Returns:
@@ -82,28 +88,27 @@ class OfficialRequestCreate(BaseModel):
             "Provide candidate_id, ssn, or first_name/last_name/date_of_birth"
         )
 
-
-class OfficialReport(BaseModel, Generic[TData]):
-    """Typed report payload nested on a ready request.
+class FPVRReportResponse(BaseModel):
+    """Report payload for a ready request.
 
     Attributes:
         code: Report produced.
         title: Display name.
         subject: Identity fields excluding SSN.
-        data: Report-specific sections.
+        data: Report-specific rows assembled from Unity Catalog.
     """
 
-    code: str
+    code: ReportCode
     title: str
-    subject: _SubjectRow
-    data: TData
+    subject: dict[str, Any]
+    data: dict[str, Any]
 
 
-class OfficialRequestAccepted(BaseModel, Generic[TData]):
+class FPVRRequestAccepted(BaseModel):
     """Response when a unique subject is resolved and an official request is logged.
 
-    POST and GET return this same body. Status lives here; there is no separate
-    status route.
+    POST /requests and GET /requests/{id} return this same body. Status lives
+    here; there is no separate status route.
 
     Attributes:
         request_id: Handle used to GET the request.
@@ -119,36 +124,30 @@ class OfficialRequestAccepted(BaseModel, Generic[TData]):
     requested_at: str
     requested_by: str | None = None
     resolution_method: str
-    report: OfficialReport[TData] | None = None
-
-
-FPVRReportResponse = OfficialReport[dict[str, Any]]
-FPVRRequestAccepted = OfficialRequestAccepted[dict[str, Any]]
-FPVRRequestCreate = OfficialRequestCreate
-
+    report: FPVRReportResponse | None = None
 
 class SubjectCandidate(BaseModel):
     """A possible subject match without SSN.
 
     Attributes:
         candidate_id: Opaque token to resubmit on POST /requests.
-        FIRST_NAME: First name.
-        LAST_NAME: Last name.
-        DATE_OF_BIRTH: Date of birth.
-        PLACE_OF_BIRTH: Place of birth.
-        SEX: Recorded sex.
-        CITIZENSHIP: Citizenship.
-        MARITAL_STATUS: Marital status.
+        first_name: First name.
+        last_name: Last name.
+        date_of_birth: Date of birth.
+        place_of_birth: Place of birth.
+        sex: Recorded sex.
+        citizenship: Citizenship.
+        marital_status: Marital status.
     """
 
     candidate_id: str
-    FIRST_NAME: str
-    LAST_NAME: str
-    DATE_OF_BIRTH: datetime | None = None
-    PLACE_OF_BIRTH: str | None = None
-    SEX: str | None = None
-    CITIZENSHIP: str | None = None
-    MARITAL_STATUS: str | None = None
+    first_name: str
+    last_name: str
+    date_of_birth: datetime | None = None
+    place_of_birth: str | None = None
+    sex: str | None = None
+    citizenship: str | None = None
+    marital_status: str | None = None
 
 
 class AmbiguousSubjectResponse(BaseModel):

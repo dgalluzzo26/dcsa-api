@@ -10,23 +10,17 @@ from pydantic import BaseModel
 
 from app.models.fpvr import (
     AmbiguousSubjectResponse,
-    FPVRReportResponse,
-    FPVRRequestAccepted,
-    FPVRRequestCreate,
-    OfficialReport,
-    OfficialRequestAccepted,
-    OfficialRequestCreate,
     SubjectCandidate,
 )
 from app.models.report_contract import ApiCatalog
-from app.models.reports.registry import discover_report_models
+from app.models.reports.registry import ready_report_models
 from app.models.subject_identity import (
     SubjectIdentity,
     SubjectIdentityListResponse,
     SubjectIdentitySearch,
 )
 
-_REPORT_ACCEPTED = discover_report_models()
+_REPORT_ACCEPTED = ready_report_models()
 globals().update({cls.__name__: cls for cls in _REPORT_ACCEPTED.values()})
 
 

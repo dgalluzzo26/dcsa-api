@@ -40,12 +40,10 @@ class ReportAssembler:
         report = self._settings.reports[report_code]
         data: dict[str, Any] = {}
         for section_name, section in report.sections.items():
-            data[section_name] = self._query(section.source, subject.SSN, user_token=user_token)
-            
+            data[section_name] = self._query(section.source, subject.ssn, user_token=user_token)
 
         ready = self._is_ready(report, data)
-        public_subject = subject.model_dump()
-        public_subject.pop("SSN", None)
+        public_subject = subject.model_dump(exclude={"ssn"})
         payload = {
             "report_code": report_code,
             "report_title": report.name,
@@ -107,11 +105,10 @@ class ReportAssembler:
             )
         except (WarehouseNotConfiguredError, SqlStatementError) as exc:
             raise ReportQueryError(str(exc)) from exc
-        omit = set(source.omit_from_output)
         out: list[dict[str, Any]] = []
         for row in rows:
-            item = {col: row[i] for i, col in enumerate(columns) if col not in omit}
-            out.append(item)
+            uc_row = {col: row[i] for i, col in enumerate(columns)}
+            out.append(self._settings.remap_row(source_name, uc_row))
         return out
 
 
