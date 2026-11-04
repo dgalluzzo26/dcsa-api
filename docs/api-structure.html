@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>DCSA API structure</title>
+  <script type="module">
+    import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs";
+    mermaid.initialize({
+      startOnLoad: true,
+      theme: "neutral",
+      flowchart: { curve: "basis", htmlLabels: true },
+    });
+  </script>
+  <style>
+    @page {
+      size: letter;
+      margin: 0.65in 0.7in 0.7in 0.7in;
+    }
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0;
+      padding: 0;
+      color: #1a1a1a;
+      font: 10.5pt/1.45 "Helvetica Neue", Helvetica, Arial, sans-serif;
+      background: #fff;
+    }
+    main {
+      max-width: 52rem;
+      margin: 0 auto;
+      padding: 28pt 24pt 36pt;
+    }
+    h1 {
+      font-size: 20pt;
+      font-weight: 650;
+      letter-spacing: -0.02em;
+      margin: 0 0 6pt;
+    }
+    h2 {
+      font-size: 12.5pt;
+      font-weight: 650;
+      margin: 18pt 0 6pt;
+      page-break-after: avoid;
+    }
+    p { margin: 0 0 8pt; }
+    .lede { color: #444; max-width: 46rem; }
+    .muted { color: #555; }
+    .callout {
+      border-left: 3px solid #2b6cb0;
+      background: #f4f7fb;
+      padding: 8pt 10pt;
+      margin: 0 0 14pt;
+    }
+    .diagram {
+      border: 1px solid #d8d8d8;
+      padding: 10pt 8pt;
+      margin: 8pt 0 12pt;
+      overflow-x: auto;
+      page-break-inside: avoid;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 9.5pt;
+      margin: 6pt 0 10pt;
+    }
+    th, td {
+      text-align: left;
+      vertical-align: top;
+      border-bottom: 1px solid #e2e2e2;
+      padding: 5pt 7pt 5pt 0;
+    }
+    th {
+      font-size: 8pt;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: #555;
+      font-weight: 650;
+    }
+    .mono { font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 8.8pt; }
+    .footer {
+      margin-top: 14pt;
+      font-size: 8.5pt;
+      color: #666;
+      border-top: 1px solid #ddd;
+      padding-top: 8pt;
+    }
+    .grid-2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10pt;
+      margin: 8pt 0 4pt;
+    }
+    .card {
+      border: 1px solid #d8d8d8;
+      padding: 9pt 10pt;
+      page-break-inside: avoid;
+    }
+    .card strong { display: block; margin-bottom: 4pt; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>DCSA API structure</h1>
+    <p class="lede">
+      A new report is a YAML key. Identity is the POST body. Everything else
+      is assembled from config at startup.
+    </p>
+    <div class="callout">
+      <code class="mono">report_code</code> lives in the path.
+      The body is <code class="mono">ssn</code> / name+DOB /
+      <code class="mono">candidate_id</code> only.
+    </div>
+
+    <h2>What a caller hits</h2>
+    <div class="diagram">
+      <pre class="mermaid">
+flowchart LR
+  client[Caller]
+  post["POST /api/v1/requests/{report_code}"]
+  get["GET /api/v1/requests/{report_code}/{id}"]
+  body[Identity body]
+  env[Typed envelope]
+  client --> post
+  client --> get
+  post --> body
+  post --> env
+  get --> env
+      </pre>
+    </div>
+
+    <h2>How a request is assembled</h2>
+    <p class="muted">
+      Startup: <code class="mono">ready_report_models()</code> walks
+      <code class="mono">reports:</code> in <code class="mono">config.yaml</code>,
+      types each <code class="mono">data</code> section from
+      <code class="mono">SECTION_ROW_MODELS[source]</code>, and registers POST/GET.
+      No per-report Python file.
+    </p>
+    <div class="diagram">
+      <pre class="mermaid">
+flowchart TB
+  route[fpvr routes]
+  svc[FPVRRequestService]
+  ident[Identity lookup]
+  asm[ReportAssembler]
+  log[Request log]
+  job[Optional Databricks job]
+  route --> svc
+  svc --> ident
+  svc --> asm
+  svc --> log
+  asm -->|ready or pending| svc
+  svc -->|pending and on_pending| job
+  yamlReports["config.yaml reports"]
+  yamlSources["config.yaml sources"]
+  mapping[mapping.yml]
+  rows[SECTION_ROW_MODELS]
+  yamlReports --> route
+  yamlReports --> asm
+  yamlSources --> ident
+  yamlSources --> asm
+  mapping --> asm
+  rows --> route
+      </pre>
+    </div>
+
+    <h2>Who owns which contract</h2>
+    <div class="diagram">
+      <pre class="mermaid">
+flowchart TB
+  subgraph yaml ["config.yaml"]
+    src["sources: table, filter, columns"]
+    rpt["reports: sections, readiness, on_pending"]
+    jobs[jobs]
+  end
+  subgraph map ["mapping.yml"]
+    rename["lake column to API name / omit"]
+  end
+  subgraph py [Python]
+    row[report_contract row models]
+    factory["registry create_model"]
+    sql["parameterized SELECT"]
+  end
+  src --> sql
+  src --> rename
+  rename --> row
+  rpt --> factory
+  row --> factory
+  jobs --> rpt
+      </pre>
+    </div>
+
+    <table>
+      <thead>
+        <tr>
+          <th>Question</th>
+          <th>Answer comes from</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Which reports / HTTP paths exist?</td>
+          <td class="mono">config.yaml reports:</td>
+        </tr>
+        <tr>
+          <td>Which tables and selected columns?</td>
+          <td class="mono">config.yaml sources:</td>
+        </tr>
+        <tr>
+          <td>JSON field names on a row?</td>
+          <td class="mono">mapping.yml</td>
+        </tr>
+        <tr>
+          <td>Types on a row?</td>
+          <td><span class="mono">SECTION_ROW_MODELS</span> (must match mapping)</td>
+        </tr>
+        <tr>
+          <td>Keys under <span class="mono">report.data</span>?</td>
+          <td>YAML section names</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class="grid-2">
+      <div class="card">
+        <strong>Existing-source report</strong>
+        Add one <code class="mono">reports:</code> entry, restart.
+      </div>
+      <div class="card">
+        <strong>New source</strong>
+        <code class="mono">sources:</code> + <code class="mono">mapping.yml</code>
+        + a row model, then the report entry.
+      </div>
+    </div>
+
+    <p class="footer">
+      Open this file in a browser (Mermaid loads from jsDelivr).
+      Companion workflow notes: <code class="mono">docs/fpvr-request-workflow.html</code>.
+    </p>
+  </main>
+</body>
+</html>

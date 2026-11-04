@@ -108,6 +108,8 @@ jobs:
             exit 1
           fi
 
+          # Nested folders under Test Suite are included (Application Bundle,
+          # CV Summary, Investigation Summary, Adjudication Summary).
           newman run DCSA-API.postman_collection.json \
             --folder "Test Suite" \
             --env-var "token=$access_token" \
