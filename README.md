@@ -195,4 +195,5 @@ Seeded people:
 - Kevin Jackson (1969-02-10) — unique match, row in every section table
 - Two Maria Santos (1985-03-22) — ambiguous name + DOB, row in every section table
 - Alex Rivera (1990-07-01) — unique match, row in every section table
+- Nora Vale (1971-04-18) — unique match, **identity only** (no status/check/activity/signal). Used by Postman pending cases. Seed into the live API schema with `scripts/sql/seed_pending_identity.sql`.
 

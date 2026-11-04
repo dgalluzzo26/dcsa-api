@@ -542,7 +542,7 @@
                 ],
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n  \"first_name\": \"Charles\",\n  \"last_name\": \"Morgan\",\n  \"date_of_birth\": \"1978-10-13\"\n}",
+                  "raw": "{\n  \"first_name\": \"Nora\",\n  \"last_name\": \"Vale\",\n  \"date_of_birth\": \"1971-04-18\"\n}",
                   "options": {
                     "raw": {
                       "language": "json"
@@ -836,7 +836,7 @@
                 ],
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n  \"first_name\": \"Charles\",\n  \"last_name\": \"Morgan\",\n  \"date_of_birth\": \"1978-10-13\"\n}",
+                  "raw": "{\n  \"first_name\": \"Nora\",\n  \"last_name\": \"Vale\",\n  \"date_of_birth\": \"1971-04-18\"\n}",
                   "options": {
                     "raw": {
                       "language": "json"
