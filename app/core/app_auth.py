@@ -33,7 +33,7 @@ def get_app_sp_token(
        CI sets it from the token it already minted for the Postman run.
     2. A cached client-credentials token, if still valid.
     3. OAuth client credentials (``DATABRICKS_CLIENT_ID`` /
-       ``DATABRICKS_CLIENT_SECRET``) with ``scope=sql`` and ``scopes=jobs``.
+       ``DATABRICKS_CLIENT_SECRET``) with ``scope=sql jobs unity-catalog``.
     4. ``fallback_token`` (the caller OBO token) when no client credentials
        are configured.
 
@@ -80,7 +80,7 @@ def get_app_sp_token(
         raise AppPrincipalError("Databricks workspace host is not set")
 
     body = urlencode(
-        {"grant_type": "client_credentials", "scope": "sql", "scopes": "jobs"}
+        {"grant_type": "client_credentials", "scope": "sql jobs unity-catalog"}
     ).encode()
     basic = b64encode(f"{client_id}:{client_secret}".encode()).decode()
     request = Request(
