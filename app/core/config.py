@@ -173,27 +173,45 @@ class FilterConfig(BaseModel):
         return _require_ident(value, kind="filter column")
 
 
-class SourceFieldConfig(BaseModel):
-    """Public JSON type metadata for one source column."""
+JsonFieldType = Literal["string", "integer", "number", "boolean", "date", "datetime"]
+_IDENTITY_SEARCH_FIELDS = ("ssn", "first_name", "last_name", "date_of_birth")
 
-    model_config = ConfigDict(str_strip_whitespace=True)
 
-    type: Literal["string", "integer", "number", "boolean", "date", "datetime"] = "string"
+class SourceColumn(BaseModel):
+    """One Unity Catalog column discovered at startup."""
+
+    name: str = Field(min_length=1)
+    type_name: str = Field(min_length=1)
+    nullable: bool = True
+    position: int = 0
+
+
+class EffectiveField(BaseModel):
+    """One source field after Unity Catalog discovery and mapping.yml overlay."""
+
+    api_name: str = Field(min_length=1)
+    column: str = Field(min_length=1)
+    omit: bool = False
+    json_type: JsonFieldType = "string"
     nullable: bool = True
 
 
 class MappedFieldConfig(BaseModel):
-    """One API field mapped to a Unity Catalog column."""
+    """Optional overlay for one Unity Catalog column in the public API."""
 
     model_config = ConfigDict(str_strip_whitespace=True)
 
-    column: str = Field(min_length=1)
+    column: str | None = None
     omit: bool = False
+    type: JsonFieldType | None = None
+    nullable: bool | None = None
 
     @field_validator("column")
     @classmethod
-    def column_is_identifier(cls, value: str) -> str:
-        """Require the lake column to be a SQL identifier."""
+    def column_is_identifier(cls, value: str | None) -> str | None:
+        """Require an explicit lake column to be a SQL identifier."""
+        if value is None:
+            return None
         return _require_ident(value, kind="mapped column")
 
 
@@ -201,7 +219,7 @@ class MappingYaml(BaseModel):
     """Validated ``mapping.yml`` document."""
 
     version: Literal[1]
-    sources: dict[str, dict[str, MappedFieldConfig]]
+    sources: dict[str, dict[str, MappedFieldConfig]] = Field(default_factory=dict)
 
     @field_validator("sources")
     @classmethod
@@ -211,17 +229,16 @@ class MappingYaml(BaseModel):
         """Require source and API field names to be safe identifiers."""
         for source_name, fields in value.items():
             _require_ident(source_name, kind="mapping source name")
-            if not fields:
-                raise ValueError(f"Mapping source {source_name!r} has no fields")
             seen_columns: set[str] = set()
             for field_name, spec in fields.items():
                 _require_ident(field_name, kind="API field")
-                if spec.column in seen_columns:
+                lake = spec.column or field_name
+                if lake in seen_columns:
                     raise ValueError(
                         f"Mapping source {source_name!r} maps column "
-                        f"{spec.column!r} more than once"
+                        f"{lake!r} more than once"
                     )
-                seen_columns.add(spec.column)
+                seen_columns.add(lake)
         return value
 
 
@@ -234,8 +251,6 @@ class SourceConfig(BaseModel):
     catalog: str | None = None
     uc_schema: str | None = Field(default=None, alias="schema")
     filter: FilterConfig
-    columns: list[str] = Field(min_length=1)
-    fields: dict[str, SourceFieldConfig] = Field(default_factory=dict)
 
     @field_validator("catalog")
     @classmethod
@@ -252,33 +267,6 @@ class SourceConfig(BaseModel):
         if value is None:
             return None
         return _require_ident(value, kind="schema")
-
-    @field_validator("columns")
-    @classmethod
-    def names_are_identifiers(cls, values: list[str]) -> list[str]:
-        """Require every listed column name to be a SQL identifier."""
-        return [_require_ident(value, kind="column") for value in values]
-
-    @field_validator("fields")
-    @classmethod
-    def field_names_are_identifiers(
-        cls, value: dict[str, SourceFieldConfig]
-    ) -> dict[str, SourceFieldConfig]:
-        """Require every fields key to be a SQL identifier."""
-        return {_require_ident(name, kind="field"): spec for name, spec in value.items()}
-
-    @model_validator(mode="after")
-    def validate_column_lists(self) -> "SourceConfig":
-        """Require filter and fields columns to be selected."""
-        selected = set(self.columns)
-        if self.filter.column not in selected:
-            raise ValueError(
-                f"Filter column {self.filter.column!r} is not in source columns"
-            )
-        unknown_fields = [name for name in self.fields if name not in selected]
-        if unknown_fields:
-            raise ValueError(f"fields keys are not selected columns: {unknown_fields}")
-        return self
 
 
 class ReportSectionConfig(BaseModel):
@@ -493,48 +481,109 @@ def _validate_readiness_sections(code: str, report: ReportConfig) -> None:
         )
 
 
-def _validate_mapping(
+def json_type_from_uc(type_name: str) -> JsonFieldType:
+    """Map a Unity Catalog ``type_name`` to a public JSON field type.
+
+    Args:
+        type_name: Databricks ``type_name`` or ``type_text``.
+
+    Returns:
+        One of the API JSON types used in generated models.
+    """
+    name = type_name.strip().upper().split("(", 1)[0]
+    if name in {"STRING", "CHAR", "BINARY", "VARCHAR"}:
+        return "string"
+    if name in {"BYTE", "SHORT", "INT", "INTEGER", "LONG", "BIGINT", "SMALLINT", "TINYINT"}:
+        return "integer"
+    if name in {"FLOAT", "DOUBLE", "DECIMAL", "NUMERIC"}:
+        return "number"
+    if name == "BOOLEAN":
+        return "boolean"
+    if name == "DATE":
+        return "date"
+    if name in {"TIMESTAMP", "TIMESTAMP_NTZ", "TIMESTAMP_LTZ"}:
+        return "datetime"
+    return "string"
+
+
+def _validate_mapping_sources(
     sources: dict[str, SourceConfig],
     mapping: dict[str, dict[str, MappedFieldConfig]],
 ) -> None:
-    """Require a 1:1 map between selected lake columns and API fields.
+    """Reject mapping.yml sources that are not configured.
 
     Args:
         sources: Configured Unity Catalog sources.
-        mapping: API field maps keyed by source name.
+        mapping: Optional API overlays keyed by source name.
 
     Raises:
-        ValueError: If sources and mapping disagree.
+        ValueError: If mapping.yml names a source that is not in config.yaml.
     """
-    source_names = set(sources)
-    mapping_names = set(mapping)
-    missing = sorted(source_names - mapping_names)
-    extra = sorted(mapping_names - source_names)
-    if missing:
-        raise ValueError(f"mapping.yml is missing sources: {missing}")
+    extra = sorted(set(mapping) - set(sources))
     if extra:
         raise ValueError(f"mapping.yml has unknown sources: {extra}")
-    for name, source in sources.items():
-        fields = mapping[name]
-        selected = set(source.columns)
-        mapped_columns = {spec.column for spec in fields.values()}
-        unmapped = sorted(selected - mapped_columns)
-        unknown = sorted(mapped_columns - selected)
-        if unmapped:
-            raise ValueError(f"Source {name} has unmapped columns: {unmapped}")
-        if unknown:
-            raise ValueError(f"Source {name} mapping references unknown columns: {unknown}")
+
+
+def _build_effective_fields(
+    source_name: str,
+    columns: list[SourceColumn],
+    overlay: dict[str, MappedFieldConfig],
+) -> list[EffectiveField]:
+    """Merge Unity Catalog columns with an optional mapping.yml overlay.
+
+    Args:
+        source_name: YAML source key, used in error messages.
+        columns: Discovered lake columns in position order.
+        overlay: API field overlays. Unmapped columns keep their lake names.
+
+    Returns:
+        Effective fields in Unity Catalog position order.
+
+    Raises:
+        ValueError: If a mapped column is not on the table.
+    """
+    uc_by_name = {column.name: column for column in columns}
+    lake_to_api: dict[str, tuple[str, MappedFieldConfig]] = {}
+    for api_name, spec in overlay.items():
+        lake = spec.column or api_name
+        if lake not in uc_by_name:
+            raise ValueError(
+                f"Source {source_name} mapping references unknown column {lake!r}"
+            )
+        lake_to_api[lake] = (api_name, spec)
+    fields: list[EffectiveField] = []
+    for column in columns:
+        if column.name in lake_to_api:
+            api_name, spec = lake_to_api[column.name]
+            json_type = spec.type or json_type_from_uc(column.type_name)
+            nullable = column.nullable if spec.nullable is None else spec.nullable
+            omit = spec.omit
+        else:
+            api_name = column.name
+            json_type = json_type_from_uc(column.type_name)
+            nullable = column.nullable
+            omit = False
+        fields.append(
+            EffectiveField(
+                api_name=api_name,
+                column=column.name,
+                omit=omit,
+                json_type=json_type,
+                nullable=nullable,
+            )
+        )
+    return fields
 
 
 def _validate_readiness_fields(
     reports: dict[str, ReportConfig],
-    mapping: dict[str, dict[str, MappedFieldConfig]],
+    effective: dict[str, list[EffectiveField]],
 ) -> None:
     """Require field_present readiness to use a public API field.
 
     Args:
         reports: Configured reports.
-        mapping: API field maps keyed by source name.
+        effective: Merged UC + mapping fields keyed by source name.
 
     Raises:
         ValueError: If readiness.field is missing or omitted.
@@ -543,46 +592,37 @@ def _validate_readiness_fields(
         if report.readiness.mode != "field_present":
             continue
         source_name = report.sections[report.readiness.section].source
-        fields = mapping[source_name]
+        fields = {field.api_name: field for field in effective[source_name]}
         field = report.readiness.field
-        if field not in fields:
+        spec = fields.get(field)
+        if spec is None:
             raise ValueError(
                 f"Report {code} readiness field {field!r} is not an API field of "
                 f"{source_name}"
             )
-        if fields[field].omit:
+        if spec.omit:
             raise ValueError(
                 f"Report {code} readiness field {field!r} is omitted from output"
             )
 
 
-def _validate_models_match_mapping(
-    mapping: dict[str, dict[str, MappedFieldConfig]],
-) -> None:
-    """Require section-row models to match public mapped fields.
+def _validate_identity_search_fields(settings: "Settings") -> None:
+    """Require identity search keys to resolve to Unity Catalog columns.
 
     Args:
-        mapping: API field maps keyed by source name.
+        settings: Loaded settings including discovered identity columns.
 
     Raises:
-        ValueError: If a row model disagrees with mapping.yml.
+        ValueError: If a search field cannot be resolved.
     """
-    from app.models.report_contract import SECTION_ROW_MODELS
-
-    for source_name, model in SECTION_ROW_MODELS.items():
-        if source_name not in mapping:
+    for field in _IDENTITY_SEARCH_FIELDS:
+        try:
+            settings.column_for("identity", field)
+        except KeyError as exc:
             raise ValueError(
-                f"Section row model {source_name!r} has no mapping.yml source"
-            )
-        public = {
-            name for name, spec in mapping[source_name].items() if not spec.omit
-        }
-        model_fields = set(model.model_fields)
-        if public != model_fields:
-            raise ValueError(
-                f"Section row model {source_name!r} fields {sorted(model_fields)} "
-                f"do not match mapping.yml public fields {sorted(public)}"
-            )
+                f"Identity source cannot resolve search field {field!r} from "
+                "Unity Catalog columns or mapping.yml"
+            ) from exc
 
 
 def _validate_job_parameter_value(value: str) -> None:
@@ -645,7 +685,7 @@ def substitute_job_parameters(
 
 
 class Settings(BaseModel):
-    """Process settings loaded from ``config.yaml`` and ``mapping.yml``.
+    """Process settings from YAML plus Unity Catalog schemas discovered at startup.
 
     ``DATABRICKS_HOST`` and ``DATABRICKS_WAREHOUSE_ID`` override YAML when set.
     Databricks Apps typically injects both.
@@ -663,6 +703,8 @@ class Settings(BaseModel):
     jobs: dict[str, JobConfig] = Field(default_factory=dict)
     reports: dict[str, ReportConfig]
     column_mapping: dict[str, dict[str, MappedFieldConfig]]
+    source_schemas: dict[str, list[SourceColumn]] = Field(default_factory=dict)
+    effective_fields: dict[str, list[EffectiveField]] = Field(default_factory=dict)
 
     @property
     def subject_identity_table(self) -> str:
@@ -721,8 +763,40 @@ class Settings(BaseModel):
             return None
         return self.jobs[report.on_pending.job]
 
+    def source_columns(self, source_name: str) -> list[str]:
+        """Return Unity Catalog column names for one source in table order.
+
+        Args:
+            source_name: YAML source key.
+
+        Returns:
+            Lake column names, including omitted join keys.
+
+        Raises:
+            KeyError: If ``source_name`` is not a known source.
+        """
+        return [field.column for field in self.effective_fields[source_name]]
+
+    def omitted_fields(self, source_name: str) -> set[str]:
+        """Return API field names that are selected but hidden from report JSON.
+
+        Args:
+            source_name: YAML source key.
+
+        Returns:
+            Omitted API names.
+        """
+        return {
+            field.api_name
+            for field in self.effective_fields[source_name]
+            if field.omit
+        }
+
     def column_for(self, source_name: str, field: str) -> str:
         """Return the Unity Catalog column for one API field.
+
+        Matches the public API name first, then a case-insensitive lake column
+        or API name so identity search keys resolve without a mapping overlay.
 
         Args:
             source_name: YAML source key.
@@ -734,7 +808,46 @@ class Settings(BaseModel):
         Raises:
             KeyError: If the source or field is unknown.
         """
-        return self.column_mapping[source_name][field].column
+        fields = self.effective_fields[source_name]
+        for spec in fields:
+            if spec.api_name == field:
+                return spec.column
+        lowered = field.lower()
+        for spec in fields:
+            if spec.api_name.lower() == lowered or spec.column.lower() == lowered:
+                return spec.column
+        raise KeyError(field)
+
+    def api_name_for(self, source_name: str, field: str) -> str:
+        """Return the public API field name for a search key or lake column.
+
+        Args:
+            source_name: YAML source key.
+            field: API name or lake column name.
+
+        Returns:
+            Effective API field name after mapping overlay.
+
+        Raises:
+            KeyError: If the source or field is unknown.
+        """
+        lake = self.column_for(source_name, field)
+        for spec in self.effective_fields[source_name]:
+            if spec.column == lake:
+                return spec.api_name
+        raise KeyError(field)
+
+    def identity_value(self, subject: Any, field: str) -> Any:
+        """Read one identity search field from a generated identity row.
+
+        Args:
+            subject: Generated identity model instance.
+            field: Canonical search key (``ssn``, ``first_name``, ...).
+
+        Returns:
+            Attribute value, or ``None`` if the generated model has no such field.
+        """
+        return getattr(subject, self.api_name_for("identity", field), None)
 
     def public_fields(self, source_name: str) -> list[str]:
         """Return API field names that are included in report JSON.
@@ -743,12 +856,12 @@ class Settings(BaseModel):
             source_name: YAML source key.
 
         Returns:
-            Field names in mapping.yml order, excluding omitted fields.
+            Field names in Unity Catalog order, excluding omitted fields.
         """
         return [
-            name
-            for name, spec in self.column_mapping[source_name].items()
-            if not spec.omit
+            field.api_name
+            for field in self.effective_fields[source_name]
+            if not field.omit
         ]
 
     def remap_row(
@@ -769,33 +882,76 @@ class Settings(BaseModel):
             Dict keyed by API field names.
         """
         out: dict[str, Any] = {}
-        for field, spec in self.column_mapping[source_name].items():
+        for spec in self.effective_fields[source_name]:
             if spec.omit and not include_omitted:
                 continue
-            out[field] = uc_row.get(spec.column)
+            out[spec.api_name] = uc_row.get(spec.column)
         return out
 
 
-#@lru_cache
+def _discover_source_schemas(settings: Settings) -> dict[str, list[SourceColumn]]:
+    """Load Unity Catalog columns for every configured source.
+
+    Args:
+        settings: YAML settings with resolved table names.
+
+    Returns:
+        Source name to discovered columns.
+
+    Raises:
+        ValueError: If auth, the tables API, or a filter column fails.
+    """
+    from app.core.app_auth import AppPrincipalError, get_app_sp_token
+    from app.core.sql import SqlStatementError, describe_unity_catalog_table
+
+    try:
+        token = get_app_sp_token(workspace_url=settings.workspace_host)
+    except AppPrincipalError as exc:
+        raise ValueError(f"Cannot discover Unity Catalog schemas: {exc}") from exc
+    schemas: dict[str, list[SourceColumn]] = {}
+    for name, source in settings.sources.items():
+        table = settings.source_table(name)
+        try:
+            columns = describe_unity_catalog_table(
+                table, access_token=token, host=settings.workspace_host
+            )
+        except SqlStatementError as exc:
+            raise ValueError(
+                f"Cannot load Unity Catalog schema for source {name} ({table}): {exc}"
+            ) from exc
+        lake_names = {column.name for column in columns}
+        if source.filter.column not in lake_names:
+            raise ValueError(
+                f"Source {name} filter column {source.filter.column!r} is not "
+                f"on Unity Catalog table {table}"
+            )
+        schemas[name] = columns
+    return schemas
+
+
+@lru_cache
 def get_settings() -> Settings:
-    """Load and cache process-wide settings from the repository YAML files.
+    """Load and cache process-wide settings from YAML and Unity Catalog.
 
     Returns:
         The cached ``Settings`` instance.
+
+    Raises:
+        ValueError: If YAML is invalid or Unity Catalog discovery fails.
     """
     with _CONFIG_PATH.open(encoding="utf-8") as config_file:
         config = YamlConfig.model_validate(yaml.safe_load(config_file))
 
     with _MAPPING_PATH.open(encoding="utf-8") as mapping_file:
-        mapping = MappingYaml.model_validate(yaml.safe_load(mapping_file))
+        mapping = MappingYaml.model_validate(
+            yaml.safe_load(mapping_file) or {"version": 1, "sources": {}}
+        )
 
-    _validate_mapping(config.sources, mapping.sources)
-    _validate_readiness_fields(config.reports, mapping.sources)
-    _validate_models_match_mapping(mapping.sources)
+    _validate_mapping_sources(config.sources, mapping.sources)
 
     injected_host = os.getenv("DATABRICKS_HOST", "").strip()
     injected_warehouse = os.getenv("DATABRICKS_WAREHOUSE_ID", "").strip()
-    return Settings(
+    settings = Settings(
         app_name=config.application.name,
         environment=config.application.environment,
         workspace_host=_normalize_workspace_host(injected_host or config.databricks.host),
@@ -807,6 +963,17 @@ def get_settings() -> Settings:
         reports=config.reports,
         column_mapping=mapping.sources,
     )
+    schemas = _discover_source_schemas(settings)
+    effective = {
+        name: _build_effective_fields(name, columns, mapping.sources.get(name) or {})
+        for name, columns in schemas.items()
+    }
+    settings = settings.model_copy(
+        update={"source_schemas": schemas, "effective_fields": effective}
+    )
+    _validate_readiness_fields(config.reports, effective)
+    _validate_identity_search_fields(settings)
+    return settings
 
 def _known_report_code(value: str) -> str:
     if value not in get_settings().reports:

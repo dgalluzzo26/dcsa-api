@@ -8,7 +8,6 @@ Unity Catalog grants, row filters and column masks apply per user.
 from __future__ import annotations
 
 import re
-from datetime import date, datetime
 from typing import Any
 
 from app.core.config import Settings, get_settings
@@ -71,7 +70,7 @@ class SubjectIdentityService:
             SubjectIdentityQueryError: If connecting or querying fails, including
                 permission errors for the calling user.
         """
-        columns = list(self._settings.sources["identity"].columns)
+        columns = self._settings.source_columns("identity")
         where, params = self._build_filters(query)
         sql_text = (
             f"SELECT {', '.join(columns)} FROM {self._table} "
@@ -133,12 +132,6 @@ class SubjectIdentityService:
         values = self._settings.remap_row(
             "identity", dict(zip(columns, row)), include_omitted=True
         )
-        dob = values.get("date_of_birth")
-        if isinstance(dob, date) and not isinstance(dob, datetime):
-            values["date_of_birth"] = datetime(dob.year, dob.month, dob.day)
-        for key, value in values.items():
-            if key != "date_of_birth" and value is not None:
-                values[key] = str(value)
         return SubjectIdentity.model_validate(values)
 
 

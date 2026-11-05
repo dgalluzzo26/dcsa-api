@@ -143,7 +143,7 @@ class SubjectCandidate(BaseModel):
     candidate_id: str
     first_name: str
     last_name: str
-    date_of_birth: datetime | None = None
+    date_of_birth: date | datetime | None = None
     place_of_birth: str | None = None
     sex: str | None = None
     citizenship: str | None = None

@@ -6,10 +6,12 @@ column names.
 
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import date
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+from app.models.sources.registry import identity_response_model
 
 
 class SubjectIdentitySearch(BaseModel):
@@ -81,32 +83,7 @@ class SubjectIdentitySearch(BaseModel):
         return self
 
 
-class SubjectIdentity(BaseModel):
-    """A single identity row, including ssn for internal joins.
-
-    Attributes:
-        ssn: Social Security Number. Returned on identity search only.
-        first_name: Subject's first name.
-        last_name: Subject's last name.
-        date_of_birth: Subject's date of birth.
-        place_of_birth: Subject's place of birth.
-        sex: Subject's recorded sex.
-        citizenship: Subject's citizenship.
-        marital_status: Subject's marital status.
-        updated_ts: Timestamp of the last update to the row.
-        record_version: Version number of the row.
-    """
-
-    ssn: str
-    first_name: str
-    last_name: str
-    date_of_birth: datetime | None = None
-    place_of_birth: str | None = None
-    sex: str | None = None
-    citizenship: str | None = None
-    marital_status: str | None = None
-    updated_ts: str | None = None
-    record_version: str | None = None
+SubjectIdentity = identity_response_model()
 
 
 class SubjectIdentityListResponse(BaseModel):

@@ -1,5 +1,5 @@
-# Maps Unity Catalog columns (config.yaml sources.*.columns) to public API
-# field names. Pydantic models use the API names. Lake names stay in SQL.
+# Optional overlay on Unity Catalog columns. Unmapped columns keep their lake
+# names and types. Set omit: true to hide a join key from report JSON.
 
 version: 1
 

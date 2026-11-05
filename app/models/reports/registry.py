@@ -9,7 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field, create_model
 
 from app.core.config import get_settings
 from app.models.fpvr import RequestStatusValue
-from app.models.report_contract import SECTION_ROW_MODELS, IdentitySectionRow
+from app.models.sources.registry import ready_source_models
 
 
 def _pascal_prefix(report_code: str) -> str:
@@ -44,13 +44,14 @@ def _build_request_accepted(report_code: str) -> type[BaseModel]:
     settings = get_settings()
     report = settings.reports[report_code]
     prefix = _pascal_prefix(report_code)
+    row_models = ready_source_models()
     data_fields: dict[str, tuple[type, object]] = {}
     for section_name, section in report.sections.items():
-        row_model = SECTION_ROW_MODELS.get(section.source)
+        row_model = row_models.get(section.source)
         if row_model is None:
             raise ValueError(
                 f"Report {report_code} section {section_name!r} source "
-                f"{section.source!r} has no row model in SECTION_ROW_MODELS"
+                f"{section.source!r} has no generated row model"
             )
         data_fields[section_name] = (list[row_model], Field(default_factory=list))
     data_model = create_model(
@@ -58,12 +59,13 @@ def _build_request_accepted(report_code: str) -> type[BaseModel]:
         __config__=ConfigDict(extra="forbid"),
         **data_fields,
     )
+    identity_model = row_models["identity"]
     report_model = create_model(
         f"{prefix}Report",
         __config__=ConfigDict(extra="forbid"),
         code=(Literal[report_code], report_code),
         title=(str, report.name),
-        subject=(IdentitySectionRow, ...),
+        subject=(identity_model, ...),
         data=(data_model, ...),
     )
     return create_model(
@@ -82,8 +84,8 @@ def _build_request_accepted(report_code: str) -> type[BaseModel]:
 def ready_report_models() -> dict[str, type[BaseModel]]:
     """Return ``{report_code: RequestAccepted}`` for every configured report.
 
-    Models are built from YAML sections and ``SECTION_ROW_MODELS``. Missing row
-    models fail startup.
+    Models are built from YAML sections and generated source row models.
+    Missing row models fail startup.
 
     Returns:
         Mapping of YAML report code to its generated envelope model.

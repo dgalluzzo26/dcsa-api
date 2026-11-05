@@ -8,13 +8,13 @@ from app import __version__
 from app.core.config import ReportConfig, get_settings
 from app.core.sql import WarehouseNotConfiguredError, workspace_host
 from app.models.report_contract import (
-    SECTION_ROW_MODELS,
     ApiCatalog,
     CatalogApi,
     CatalogField,
     CatalogReport,
     CatalogScenario,
 )
+from app.models.sources.registry import ready_source_models
 
 _SAMPLE_REQUEST_ID = "7c2e1a8f-4b0d-4e9a-9f31-2a6c8d5e1b04"
 _SAMPLE_CANDIDATE_ID = "cnd.opaque.token.example"
@@ -95,7 +95,7 @@ def _public_columns(source_name: str) -> list[str]:
         source_name: YAML source key.
 
     Returns:
-        Public API field names in mapping.yml order.
+        Public API field names in Unity Catalog order after mapping overlay.
     """
     return get_settings().public_fields(source_name)
 
@@ -109,13 +109,13 @@ def _fields_for_source(source_name: str) -> list[CatalogField]:
     Returns:
         Catalog field metadata.
     """
-    settings = get_settings()
     public = _public_columns(source_name)
-    model = SECTION_ROW_MODELS.get(source_name)
+    model = ready_source_models().get(source_name)
     schema_fields: dict[str, CatalogField] = {}
     if model is not None:
-        props = model.model_json_schema().get("properties") or {}
-        required = set(model.model_json_schema().get("required") or [])
+        json_schema = model.model_json_schema()
+        props = json_schema.get("properties") or {}
+        required = set(json_schema.get("required") or [])
         for name, spec in props.items():
             json_type, nullable = _json_type(spec)
             schema_fields[name] = CatalogField(
@@ -123,19 +123,10 @@ def _fields_for_source(source_name: str) -> list[CatalogField]:
                 type=json_type,
                 nullable=nullable or name not in required,
             )
-    lake_fields = settings.sources[source_name].fields
-    mapping = settings.column_mapping[source_name]
     fields: list[CatalogField] = []
     for name in public:
         if name in schema_fields:
             fields.append(schema_fields[name])
-            continue
-        column = mapping[name].column
-        lake_spec = lake_fields.get(column)
-        if lake_spec is not None:
-            fields.append(
-                CatalogField(name=name, type=lake_spec.type, nullable=lake_spec.nullable)
-            )
         else:
             fields.append(CatalogField(name=name, type="string", nullable=True))
     return fields
@@ -195,7 +186,7 @@ def _example_envelope(code: str) -> dict[str, Any]:
     return {
         "code": code,
         "title": settings.report_title(code),
-        "subject": dict(_SAMPLE_SUBJECT),
+        "subject": _sample_row("identity"),
         "data": data,
     }
 

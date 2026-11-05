@@ -22,7 +22,9 @@ _cached_token: str | None = None
 _cached_until: float = 0.0
 
 
-def get_app_sp_token(*, fallback_token: str | None = None) -> str:
+def get_app_sp_token(
+    *, fallback_token: str | None = None, workspace_url: str | None = None
+) -> str:
     """Return an OAuth access token for the Databricks App service principal.
 
     Databricks Apps inject ``DATABRICKS_CLIENT_ID`` and
@@ -33,6 +35,9 @@ def get_app_sp_token(*, fallback_token: str | None = None) -> str:
     Args:
         fallback_token: Caller token used when App SP credentials and
             ``DATABRICKS_TOKEN`` are not set.
+        workspace_url: Workspace host used for the OIDC token request. When
+            omitted, ``workspace_host()`` (settings) is used. Pass this when
+            calling from ``get_settings()`` to avoid recursion.
 
     Returns:
         A Bearer access token for App SP SQL or Jobs API calls.
@@ -56,14 +61,16 @@ def get_app_sp_token(*, fallback_token: str | None = None) -> str:
             return fallback_token.strip()
         raise AppPrincipalError(
             "DATABRICKS_CLIENT_ID and DATABRICKS_CLIENT_SECRET are required "
-            "to start pending-report jobs as the app service principal. "
+            "to discover Unity Catalog schemas and start pending-report jobs. "
             "Locally set DATABRICKS_TOKEN instead."
         )
 
     try:
-        host = workspace_host()
+        host = (workspace_url or workspace_host()).strip().rstrip("/")
     except Exception as exc:
         raise AppPrincipalError(str(exc)) from exc
+    if not host:
+        raise AppPrincipalError("Databricks workspace host is not set")
 
     body = urlencode({"grant_type": "client_credentials", "scope": "all-apis"}).encode()
     basic = b64encode(f"{client_id}:{client_secret}".encode()).decode()

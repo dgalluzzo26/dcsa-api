@@ -39,11 +39,14 @@ class ReportAssembler:
         """
         report = self._settings.reports[report_code]
         data: dict[str, Any] = {}
+        ssn = str(self._settings.identity_value(subject, "ssn") or "")
         for section_name, section in report.sections.items():
-            data[section_name] = self._query(section.source, subject.ssn, user_token=user_token)
+            data[section_name] = self._query(section.source, ssn, user_token=user_token)
 
         ready = self._is_ready(report, data)
-        public_subject = subject.model_dump(exclude={"ssn"})
+        public_subject = subject.model_dump(
+            exclude=self._settings.omitted_fields("identity")
+        )
         payload = {
             "report_code": report_code,
             "report_title": report.name,
@@ -94,7 +97,7 @@ class ReportAssembler:
         """
         source = self._settings.sources[source_name]
         table = self._settings.source_table(source_name)
-        columns = list(source.columns)
+        columns = self._settings.source_columns(source_name)
         sql = (
             f"SELECT {', '.join(columns)} FROM {table} "
             f"WHERE {source.filter.column} = :{source.filter.parameter}"

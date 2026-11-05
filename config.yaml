@@ -1,4 +1,5 @@
 # Live SQL/catalog settings. API field names are in mapping.yml.
+# Source columns and types are discovered from Unity Catalog at startup.
 
 version: 1
 
@@ -18,119 +19,30 @@ sources:
     filter:
       column: SSN
       parameter: subject_ssn
-    columns:
-      - SSN
-      - FIRST_NAME
-      - LAST_NAME
-      - DATE_OF_BIRTH
-      - PLACE_OF_BIRTH
-      - SEX
-      - CITIZENSHIP
-      - MARITAL_STATUS
-      - UPDATED_TS
-      - RECORD_VERSION
-    fields:
-      FIRST_NAME: { type: string, nullable: false }
-      LAST_NAME: { type: string, nullable: false }
-      DATE_OF_BIRTH: { type: datetime, nullable: true }
-      PLACE_OF_BIRTH: { type: string, nullable: true }
-      SEX: { type: string, nullable: true }
-      CITIZENSHIP: { type: string, nullable: true }
-      MARITAL_STATUS: { type: string, nullable: true }
-      UPDATED_TS: { type: string, nullable: true }
-      RECORD_VERSION: { type: string, nullable: true }
 
   status:
     table: subject_status
     filter:
       column: SSN
       parameter: subject_ssn
-    columns:
-      - SSN
-      - ORG_CODE
-      - POSITION_TITLE
-      - DUTY_LOCATION
-      - RISK_TIER
-      - ELIGIBILITY_LEVEL
-      - STATUS_CODE
-      - STATUS_EFFECTIVE_DATE
-      - UPDATED_TS
-      - RECORD_VERSION
-    fields:
-      ORG_CODE: { type: string, nullable: true }
-      POSITION_TITLE: { type: string, nullable: true }
-      DUTY_LOCATION: { type: string, nullable: true }
-      RISK_TIER: { type: string, nullable: true }
-      ELIGIBILITY_LEVEL: { type: string, nullable: true }
-      STATUS_CODE: { type: string, nullable: true }
-      STATUS_EFFECTIVE_DATE: { type: string, nullable: true }
-      UPDATED_TS: { type: string, nullable: true }
-      RECORD_VERSION: { type: string, nullable: true }
 
   check:
     table: subject_check
     filter:
       column: SSN
       parameter: subject_ssn
-    columns:
-      - CHECK_ID
-      - SSN
-      - LOCATION_CODE
-      - CHECK_TYPE
-      - RESULT_CODE
-      - RESULT_SCORE
-      - CHECKED_TS
-      - LOAD_SEQ
-    fields:
-      CHECK_ID: { type: string, nullable: true }
-      LOCATION_CODE: { type: string, nullable: true }
-      CHECK_TYPE: { type: string, nullable: true }
-      RESULT_CODE: { type: string, nullable: true }
-      RESULT_SCORE: { type: string, nullable: true }
-      CHECKED_TS: { type: string, nullable: true }
-      LOAD_SEQ: { type: string, nullable: true }
 
   activity:
     table: subject_activity
     filter:
       column: SSN
       parameter: subject_ssn
-    columns:
-      - ACTIVITY_ID
-      - SSN
-      - LOCATION_CODE
-      - ACTIVITY_TYPE
-      - DETAIL
-      - EVENT_TS
-      - LOAD_SEQ
-    fields:
-      ACTIVITY_ID: { type: string, nullable: true }
-      LOCATION_CODE: { type: string, nullable: true }
-      ACTIVITY_TYPE: { type: string, nullable: true }
-      DETAIL: { type: string, nullable: true }
-      EVENT_TS: { type: string, nullable: true }
-      LOAD_SEQ: { type: string, nullable: true }
 
   signal:
     table: subject_signal
     filter:
       column: SSN
       parameter: subject_ssn
-    columns:
-      - SIGNAL_ID
-      - SSN
-      - LOCATION_CODE
-      - SIGNAL_TYPE
-      - SEVERITY
-      - SIGNAL_TS
-      - LOAD_SEQ
-    fields:
-      SIGNAL_ID: { type: string, nullable: true }
-      LOCATION_CODE: { type: string, nullable: true }
-      SIGNAL_TYPE: { type: string, nullable: true }
-      SEVERITY: { type: string, nullable: true }
-      SIGNAL_TS: { type: string, nullable: true }
-      LOAD_SEQ: { type: string, nullable: true }
 
 jobs:
   mock_async_job:

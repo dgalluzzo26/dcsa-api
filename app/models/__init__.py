@@ -14,12 +14,15 @@ from app.models.fpvr import (
 )
 from app.models.report_contract import ApiCatalog
 from app.models.reports.registry import ready_report_models
+from app.models.sources.registry import ready_source_models
 from app.models.subject_identity import (
     SubjectIdentity,
     SubjectIdentityListResponse,
     SubjectIdentitySearch,
 )
 
+_SOURCE_ROWS = ready_source_models()
+globals().update({cls.__name__: cls for cls in _SOURCE_ROWS.values()})
 _REPORT_ACCEPTED = ready_report_models()
 globals().update({cls.__name__: cls for cls in _REPORT_ACCEPTED.values()})
 
@@ -84,5 +87,6 @@ __all__ = [
     "SubjectIdentity",
     "SubjectIdentityListResponse",
     "SubjectIdentitySearch",
+    *sorted(cls.__name__ for cls in _SOURCE_ROWS.values()),
     *sorted(cls.__name__ for cls in _REPORT_ACCEPTED.values()),
 ]

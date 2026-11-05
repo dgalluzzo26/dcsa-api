@@ -10,13 +10,14 @@ FastAPI backend for Databricks Apps, deployed with a Declarative Automation Bund
 app/
   models/          # Pydantic request/response schemas
     reports/       # Report envelope factory (OpenAPI models from config.yaml)
-    report_contract.py  # Shared section-row models + catalog schemas
+    sources/       # Source row factory (OpenAPI models from Unity Catalog + mapping.yml)
+    report_contract.py  # Catalog schemas
   services/        # Identity, report assembly, request log, catalog
   routes/          # HTTP endpoints (FPVR routes generated from report models)
   core/            # YAML settings, OBO SQL, jobs
   main.py          # FastAPI app (OpenAPI at /docs)
-config.yaml        # Sources, reports, jobs, warehouse (SQL/catalog contract)
-mapping.yml        # Databricks column → API field names (validated at startup)
+config.yaml        # Sources (table + filter), reports, jobs, warehouse
+mapping.yml        # Optional overlay: rename, omit, or override type/nullability
 app.yaml           # Databricks Apps process command
 databricks.yml
 resources/dcsa_api.app.yml
@@ -32,13 +33,15 @@ Callers open an official request for one report, then poll until it is ready.
 4. YAML **readiness** decides `ready` vs `pending`. Pending reports may start a Databricks job (`on_pending`) and later flip to ready on **GET**.
 5. The request log is written as the app service principal; subject and report reads run on-behalf-of the caller (ABAC/RBAC apply).
 
-`config.yaml` is the SQL/catalog contract (tables, selected columns, filters, reports, jobs). `mapping.yml` is the API rename layer: each selected lake column maps to one public JSON field. Pydantic models use those API names. Invalid YAML fails startup rather than serving a half-configured API. Identifiers are allowlisted; filter values are bound as SQL parameters. YAML cannot express joins, extra predicates, or arbitrary SQL.
+`config.yaml` is the SQL/catalog contract (tables, filters, reports, jobs). Source **columns and types** are discovered from Unity Catalog at startup. `mapping.yml` is an optional overlay: rename a lake column, hide it (`omit: true`), or override type/nullability. Unmapped columns are public under their lake names. Invalid YAML or a failed schema lookup fails startup rather than serving a half-configured API. Identifiers are allowlisted; filter values are bound as SQL parameters. YAML cannot express joins, extra predicates, or arbitrary SQL.
 
-The public catalog (`/api/v1/catalog` and `/help`) is generated from config, mapping, and optional Pydantic row models.
+The public catalog (`/api/v1/catalog` and `/help`) is generated from config, Unity Catalog, mapping overlays, and the generated row models.
+
+Startup requires Databricks credentials (`DATABRICKS_CLIENT_ID`/`DATABRICKS_CLIENT_SECRET` on Apps, or `DATABRICKS_TOKEN` locally) so the app can describe each source table.
 
 ## Adding a source
 
-A **source** is a reusable table or view. Multiple reports can share one source.
+A **source** is a reusable table or view. Multiple reports can share one source. Row models are generated at startup from the Unity Catalog table schema; you do not write a Python class.
 
 1. Add an entry under `sources:` in `config.yaml`. Copy an existing source (for example `identity`) and change names.
 
@@ -51,29 +54,22 @@ A **source** is a reusable table or view. Multiple reports can share one source.
        filter:
          column: SSN
          parameter: subject_ssn         # only allowed bind parameter today
-       columns:
-         - SSN
-         - COURSE_NAME
-         - COMPLETED_DATE
-       fields:                          # optional; keyed by lake column
-         COURSE_NAME: { type: string, nullable: true }
-         COMPLETED_DATE: { type: date, nullable: true }
    ```
 
-2. Add the same source under `sources:` in `mapping.yml`. Every selected lake column must map to exactly one API field. Set `omit: true` for join keys that must not appear in report JSON.
+   The app describes that table at startup and offers every column (with Databricks types) on the API.
+
+2. Optionally overlay names and visibility under `sources:` in `mapping.yml`. Unmapped columns keep their lake names. Set `omit: true` for join keys that must not appear in report JSON. You can also override `type` and `nullable`. If `column` is omitted, the YAML key is the lake column name.
 
    ```yaml
    sources:
      training:
        ssn: { column: SSN, omit: true }
        course_name: { column: COURSE_NAME }
-       completed_date: { column: COMPLETED_DATE }
+       completed_date: { column: COMPLETED_DATE, type: date }
    ```
 
-3. Every identifier (catalog, schema, table, column, `fields` key, API field) must be `[A-Za-z0-9_]+`. The filter column must appear in `columns`. Each `fields` key must be a selected lake column. `field_present` readiness uses the **API** field name from `mapping.yml`.
-4. Optional `fields` in `config.yaml` sets catalog types for lake columns. Allowed `type` values: `string`, `integer`, `number`, `boolean`, `date`, `datetime`. Without `fields`, public columns still work and are documented as nullable strings.
-5. Add a Pydantic row model in `app/models/report_contract.py` and register it on `SECTION_ROW_MODELS` under the source name. Its public fields must match `mapping.yml` (startup fails if they disagree).
-6. Optional: add a sample row in `app/services/catalog.py` (`_SAMPLE_ROWS`) so `/help` examples look realistic. Use API field names, not lake columns.
+3. Every identifier (catalog, schema, table, column, API field) must be `[A-Za-z0-9_]+`. The filter column must exist on the Unity Catalog table. Mapping entries must name real lake columns. `field_present` readiness uses the **API** field name (mapped name, or the lake name if unmapped). Allowed overlay `type` values: `string`, `integer`, `number`, `boolean`, `date`, `datetime`.
+4. Optional: add a sample row in `app/services/catalog.py` (`_SAMPLE_ROWS`) so `/help` examples look realistic. Use API field names, not lake columns. Unknown fields in examples are `null`.
 
 ## Adding a report
 
@@ -120,7 +116,7 @@ A **report** is a named payload: sections (each pointing at a source), a readine
 
    If the report is pending and `on_pending.job` is set, the app starts that Databricks job once (idempotent on `request_id`) with allowlisted placeholders such as `{{request_id}}` and `{{subject_ssn}}`. Define the job under `jobs:` first. Callers poll GET until readiness passes.
 
-3. If every section `source` already exists, no Python file is required. OpenAPI envelopes are built at startup from YAML sections and `SECTION_ROW_MODELS`. A new source still needs a row model (see [Adding a source](#adding-a-source)). Startup fails if a section source has no row model.
+3. If every section `source` already exists, no Python file is required. OpenAPI envelopes are built at startup from YAML sections and generated source row models. A new source needs a `config.yaml` table + filter (see [Adding a source](#adding-a-source)); its row model is created from Unity Catalog. Startup fails if a section source has no discovered schema.
 
    Routes are registered from config by ``app/models/reports/registry.py``. After restart, you get:
 
@@ -129,9 +125,11 @@ A **report** is a named payload: sections (each pointing at a source), a readine
 
    The POST body is identity only (`ssn`, `first_name` / `last_name` / `date_of_birth`, or `candidate_id`). Report code is the path.
 
-4. Restart the app (settings are cached). Confirm the report appears in `/docs`, `/api/v1/catalog`, and `/help`. Invalid config fails at startup with a validation error.
+4. Restart the app (settings and Unity Catalog schemas are cached). Confirm the report appears in `/docs`, `/api/v1/catalog`, and `/help`. Invalid config or a failed table describe fails at startup with a validation error.
 
 ## Local run
+
+Set `DATABRICKS_TOKEN` (and optionally `DATABRICKS_HOST` / `DATABRICKS_WAREHOUSE_ID`) so startup can describe Unity Catalog tables.
 
 ```bash
 cd /Users/david.galluzzo/FBR/dcsa-api
@@ -175,7 +173,7 @@ After deploy, open the app URL and hit `/docs` to exercise the API.
 
 ## FPVR source config
 
-Table and warehouse names live in `config.yaml` (`databricks.default_catalog_schema`, `databricks.request_log_table`, and each `sources.*.table`). Per-source `catalog` / `schema` override the default. Names may be `table`, `schema.table`, or `catalog.schema.table` (views included).
+Table and warehouse names live in `config.yaml` (`databricks.default_catalog_schema`, `databricks.request_log_table`, and each `sources.*.table`). Per-source `catalog` / `schema` override the default. Names may be `table`, `schema.table`, or `catalog.schema.table` (views included). Column lists are not in YAML; they come from Unity Catalog.
 
 `DATABRICKS_HOST` and `DATABRICKS_WAREHOUSE_ID` override the YAML host and warehouse when set (Databricks Apps injects both).
 

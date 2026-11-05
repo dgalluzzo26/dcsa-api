@@ -130,11 +130,12 @@ flowchart LR
 
     <h2>How a request is assembled</h2>
     <p class="muted">
-      Startup: <code class="mono">ready_report_models()</code> walks
+      Startup: Unity Catalog columns generate source row models.
+      <code class="mono">ready_report_models()</code> walks
       <code class="mono">reports:</code> in <code class="mono">config.yaml</code>,
       types each <code class="mono">data</code> section from
-      <code class="mono">SECTION_ROW_MODELS[source]</code>, and registers POST/GET.
-      No per-report Python file.
+      <code class="mono">ready_source_models()[source]</code>, and registers POST/GET.
+      No per-source or per-report Python class.
     </p>
     <div class="diagram">
       <pre class="mermaid">
@@ -154,12 +155,14 @@ flowchart TB
   yamlReports["config.yaml reports"]
   yamlSources["config.yaml sources"]
   mapping[mapping.yml]
-  rows[SECTION_ROW_MODELS]
+  uc[Unity Catalog schema]
+  rows[ready_source_models]
   yamlReports --> route
   yamlReports --> asm
   yamlSources --> ident
   yamlSources --> asm
-  mapping --> asm
+  uc --> rows
+  mapping --> rows
   rows --> route
       </pre>
     </div>
@@ -169,21 +172,20 @@ flowchart TB
       <pre class="mermaid">
 flowchart TB
   subgraph yaml ["config.yaml"]
-    src["sources: table, filter, columns"]
+    src["sources: table, filter"]
     rpt["reports: sections, readiness, on_pending"]
     jobs[jobs]
   end
   subgraph map ["mapping.yml"]
-    rename["lake column to API name / omit"]
+    rename["optional rename / omit / type"]
   end
   subgraph py [Python]
-    row[report_contract row models]
-    factory["registry create_model"]
+    row["ready_source_models"]
+    factory["ready_report_models"]
     sql["parameterized SELECT"]
   end
   src --> sql
-  src --> rename
-  rename --> row
+  map --> row
   rpt --> factory
   row --> factory
   jobs --> rpt
@@ -203,16 +205,16 @@ flowchart TB
           <td class="mono">config.yaml reports:</td>
         </tr>
         <tr>
-          <td>Which tables and selected columns?</td>
+          <td>Which tables?</td>
           <td class="mono">config.yaml sources:</td>
         </tr>
         <tr>
           <td>JSON field names on a row?</td>
-          <td class="mono">mapping.yml</td>
+          <td>Unity Catalog names, unless mapping.yml renames</td>
         </tr>
         <tr>
           <td>Types on a row?</td>
-          <td><span class="mono">SECTION_ROW_MODELS</span> (must match mapping)</td>
+          <td>Unity Catalog, unless mapping.yml overrides</td>
         </tr>
         <tr>
           <td>Keys under <span class="mono">report.data</span>?</td>
@@ -228,8 +230,8 @@ flowchart TB
       </div>
       <div class="card">
         <strong>New source</strong>
-        <code class="mono">sources:</code> + <code class="mono">mapping.yml</code>
-        + a row model, then the report entry.
+        <code class="mono">sources:</code> table + filter, optional
+        <code class="mono">mapping.yml</code> overlay, then the report entry.
       </div>
     </div>
 

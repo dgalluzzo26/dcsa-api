@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import date, datetime
 from uuid import uuid4
 
 from app.core.candidates import CandidateTokenError, sign_candidate_id, ssn_from_candidate_id
@@ -18,6 +19,23 @@ from app.models.subject_identity import SubjectIdentity, SubjectIdentitySearch
 from app.services.reports import ReportQueryError, get_report_assembler
 from app.services.request_log import RequestLogError, get_request_log_service, utc_now_iso
 from app.services.subject_identity import SubjectIdentityQueryError, get_subject_identity_service
+
+
+def _identity_field(subject: SubjectIdentity, field: str):
+    """Read a canonical identity field from a generated row model."""
+    return get_settings().identity_value(subject, field)
+
+
+def _date_of_birth_iso(value) -> str | None:
+    """Normalize a generated date-of-birth value to an ISO calendar date."""
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return value.date().isoformat()
+    if isinstance(value, date):
+        return value.isoformat()
+    text = str(value).strip()
+    return text[:10] if text else None
 
 
 class SubjectNotFoundError(LookupError):
@@ -81,16 +99,17 @@ class FPVRRequestService:
         )
         now = utc_now_iso()
         request_id = str(uuid4())
-        dob = None
-        if subject.date_of_birth is not None:
-            dob = subject.date_of_birth.date().isoformat()
+        dob = _date_of_birth_iso(_identity_field(subject, "date_of_birth"))
+        subject_ssn = str(_identity_field(subject, "ssn") or "")
+        first_name = _identity_field(subject, "first_name")
+        last_name = _identity_field(subject, "last_name")
         log = get_request_log_service()
         log.insert(
             request_id=request_id,
             report_code=report_code,
-            subject_ssn=subject.ssn,
-            first_name=subject.first_name,
-            last_name=subject.last_name,
+            subject_ssn=subject_ssn,
+            first_name=first_name,
+            last_name=last_name,
             date_of_birth=dob,
             status=status,
             requested_by=requested_by,
@@ -103,9 +122,9 @@ class FPVRRequestService:
             self._kickoff_pending_job(
                 request_id,
                 report_code=report_code,
-                subject_ssn=subject.ssn,
-                subject_first_name=subject.first_name,
-                subject_last_name=subject.last_name,
+                subject_ssn=subject_ssn,
+                subject_first_name=first_name,
+                subject_last_name=last_name,
                 subject_date_of_birth=dob,
                 user_token=user_token,
             )
@@ -233,14 +252,14 @@ class FPVRRequestService:
         if result.total > 1:
             candidates = [
                 SubjectCandidate(
-                    candidate_id=sign_candidate_id(item.ssn),
-                    first_name=item.first_name,
-                    last_name=item.last_name,
-                    date_of_birth=item.date_of_birth,
-                    place_of_birth=item.place_of_birth,
-                    sex=item.sex,
-                    citizenship=item.citizenship,
-                    marital_status=item.marital_status,
+                    candidate_id=sign_candidate_id(str(_identity_field(item, "ssn") or "")),
+                    first_name=_identity_field(item, "first_name") or "",
+                    last_name=_identity_field(item, "last_name") or "",
+                    date_of_birth=_identity_field(item, "date_of_birth"),
+                    place_of_birth=getattr(item, "place_of_birth", None),
+                    sex=getattr(item, "sex", None),
+                    citizenship=getattr(item, "citizenship", None),
+                    marital_status=getattr(item, "marital_status", None),
                 )
                 for item in result.items
             ]
