@@ -88,6 +88,9 @@ jobs:
           echo "::add-mask::${access_token}"
           rm -f token.json
 
+          # Reuse the token minted above so startup Unity Catalog discovery does not
+          # request a second OIDC token from inside the API process.
+          export DATABRICKS_TOKEN="${access_token}"
           uvicorn app.main:app --host 127.0.0.1 --port 8000 >api.log 2>&1 &
           API_PID=$!
 
