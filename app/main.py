@@ -7,7 +7,10 @@ API routes under ``/api``.
 from __future__ import annotations
 
 from fastapi import FastAPI, HTTPException, Request
+from fastapi.encoders import jsonable_encoder
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.openapi.utils import get_openapi
 from fastapi.responses import JSONResponse
 
 from app import __version__
@@ -61,6 +64,22 @@ app.add_middleware(
 app.add_middleware(RequestIdMiddleware)
 
 
+@app.exception_handler(RequestValidationError)
+async def request_validation_handler(
+    request: Request, exc: RequestValidationError
+) -> JSONResponse:
+    """Return 400 for invalid or incomplete request bodies and query params.
+
+    FastAPI defaults these to 422; this API treats them as bad requests.
+    """
+    rid = current_request_id(request)
+    return JSONResponse(
+        status_code=400,
+        content={"detail": jsonable_encoder(exc.errors()), "request_id": rid},
+        headers={"X-Request-Id": rid},
+    )
+
+
 @app.exception_handler(HTTPException)
 async def http_exception_handler(request: Request, exc: HTTPException) -> JSONResponse:
     """Attach ``request_id`` to HTTP error bodies for log correlation.
@@ -75,12 +94,43 @@ async def http_exception_handler(request: Request, exc: HTTPException) -> JSONRe
     rid = current_request_id(request)
     detail = exc.detail
     if isinstance(detail, dict):
-        content: dict = {**detail, "request_id": rid}
+        content: dict = {**jsonable_encoder(detail), "request_id": rid}
     else:
-        content = {"detail": detail, "request_id": rid}
+        content = {"detail": jsonable_encoder(detail), "request_id": rid}
     headers = dict(exc.headers or {})
     headers["X-Request-Id"] = rid
     return JSONResponse(status_code=exc.status_code, content=content, headers=headers)
+
+
+def custom_openapi() -> dict:
+    """Build OpenAPI with validation failures documented as 400, not 422."""
+    if app.openapi_schema:
+        return app.openapi_schema
+    schema = get_openapi(
+        title=app.title,
+        version=app.version,
+        openapi_version=app.openapi_version,
+        description=app.description,
+        routes=app.routes,
+        tags=app.openapi_tags,
+        contact=app.contact,
+    )
+    for item in schema.get("paths", {}).values():
+        for operation in item.values():
+            if not isinstance(operation, dict):
+                continue
+            responses = operation.get("responses")
+            if not responses or "422" not in responses:
+                continue
+            moved = responses.pop("422")
+            if moved.get("description") in {"Validation Error", "Unprocessable Content"}:
+                moved["description"] = "Bad Request"
+            responses.setdefault("400", moved)
+    app.openapi_schema = schema
+    return schema
+
+
+app.openapi = custom_openapi
 
 app.include_router(router, prefix="/api")
 app.add_api_route("/help", help_page, methods=["GET"], include_in_schema=False)

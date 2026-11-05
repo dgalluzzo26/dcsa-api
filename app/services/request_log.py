@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from app.models.fpvr import RequestStatusValue
+from app.models.fpvr import FPVRRequestListQuery, ReportCode, RequestSource, RequestStatusValue
 
 
 class RequestLogError(RuntimeError):
@@ -36,6 +36,7 @@ class RequestLogService:
         requested_at: str,
         ready_at: str | None,
         resolution_method: str,
+        source: RequestSource = RequestSource.external,
         user_token: str | None = None,
     ) -> None:
         """Insert a new official request.
@@ -52,6 +53,7 @@ class RequestLogService:
             requested_at: UTC timestamp string.
             ready_at: UTC timestamp if already ready.
             resolution_method: unique_match or candidate_id.
+            source: internal or external; defaults to external.
             user_token: Unused; kept so callers match the warehouse-backed API.
         """
         del user_token
@@ -67,6 +69,7 @@ class RequestLogService:
             "requested_at": requested_at,
             "ready_at": ready_at or "",
             "resolution_method": resolution_method,
+            "source": source.value,
             "job_run_id": "",
         }
 
@@ -83,6 +86,53 @@ class RequestLogService:
         del user_token
         row = self._rows.get(request_id)
         return None if row is None else dict(row)
+
+    def list(
+        self,
+        query: FPVRRequestListQuery,
+        *,
+        report_code: ReportCode | None = None,
+        user_token: str | None = None,
+    ) -> list[dict[str, str]]:
+        """Return request log rows matching optional filters.
+
+        Args:
+            query: Optional status, caller, requested_at range, resolution, source.
+            report_code: When set, restrict to that report.
+            user_token: Unused; kept so callers match the warehouse-backed API.
+
+        Returns:
+            Matching column maps, newest ``requested_at`` first.
+        """
+        del user_token
+        rows = list(self._rows.values())
+        if report_code is not None:
+            rows = [row for row in rows if row.get("report_code") == report_code.value]
+        if query.status is not None:
+            rows = [row for row in rows if row.get("status") == query.status.value]
+        if query.requested_by is not None:
+            rows = [row for row in rows if row.get("requested_by") == query.requested_by]
+        if query.requested_at_after is not None:
+            after = _utc_iso(query.requested_at_after)
+            rows = [row for row in rows if (row.get("requested_at") or "") >= after]
+        if query.requested_at_before is not None:
+            before = _utc_iso(query.requested_at_before)
+            rows = [row for row in rows if (row.get("requested_at") or "") <= before]
+        if query.resolution_method is not None:
+            rows = [
+                row
+                for row in rows
+                if row.get("resolution_method") == query.resolution_method
+            ]
+        if query.source is not None:
+            wanted = query.source.value
+            rows = [
+                row
+                for row in rows
+                if (row.get("source") or RequestSource.external.value) == wanted
+            ]
+        rows.sort(key=lambda row: row.get("requested_at") or "", reverse=True)
+        return [dict(row) for row in rows[: int(query.limit)]]
 
     def update_status(
         self,
@@ -142,4 +192,18 @@ def utc_now_iso() -> str:
     Returns:
         Timestamp with a ``Z`` suffix.
     """
-    return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+    return _utc_iso(datetime.now(timezone.utc))
+
+
+def _utc_iso(value: datetime) -> str:
+    """Format a timestamp as UTC ISO-8601 with a ``Z`` suffix.
+
+    Args:
+        value: Aware or naive datetime. Naive values are treated as UTC.
+
+    Returns:
+        Second-precision UTC timestamp.
+    """
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")

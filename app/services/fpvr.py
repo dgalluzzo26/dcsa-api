@@ -12,8 +12,11 @@ from app.models.fpvr import (
     FPVRReportResponse,
     FPVRRequestAccepted,
     FPVRRequestCreate,
+    FPVRRequestListQuery,
+    FPVRRequestListResponse,
     REPORT_TITLES,
     ReportCode,
+    RequestSource,
     RequestStatusValue,
     SubjectCandidate,
 )
@@ -174,8 +177,48 @@ class FPVRRequestService:
             requested_at=row["requested_at"],
             requested_by=row["requested_by"] or None,
             resolution_method=row["resolution_method"] or "",
+            source=_source_from_row(row),
             report=report,
         )
+
+    def list(
+        self,
+        query: FPVRRequestListQuery,
+        *,
+        report_code: ReportCode,
+        user_token: str,
+    ) -> FPVRRequestListResponse:
+        """Return request log rows matching optional filters for one report.
+
+        List does not assemble nested reports; use GET by id for a ready payload.
+
+        Args:
+            query: Optional filters. All empty means the newest rows for the report.
+            report_code: Report implied by the route.
+            user_token: Caller token used when App SP credentials are unset.
+
+        Returns:
+            Matching envelopes with ``report`` unset.
+
+        Raises:
+            RequestLogError: Log read failed.
+        """
+        rows = get_request_log_service().list(
+            query, report_code=report_code, user_token=user_token
+        )
+        items = [
+            FPVRRequestAccepted(
+                request_id=row["request_id"],
+                status=RequestStatusValue(row["status"]),
+                requested_at=row["requested_at"],
+                requested_by=row["requested_by"] or None,
+                resolution_method=row["resolution_method"] or "",
+                source=_source_from_row(row),
+                report=None,
+            )
+            for row in rows
+        ]
+        return FPVRRequestListResponse(items=items, total=len(items))
 
     def _report(
         self,
@@ -317,6 +360,22 @@ class FPVRRequestService:
             log.update_status(request_id, RequestStatusValue.failed)
             raise ReportQueryError(str(exc)) from exc
         log.set_job_run_id(request_id, run_id)
+
+
+def _source_from_row(row: dict[str, str]) -> RequestSource:
+    """Read ``source`` from a log row, defaulting to external.
+
+    Args:
+        row: Request log column map.
+
+    Returns:
+        Parsed source, or external when missing or unknown.
+    """
+    raw = (row.get("source") or "").strip()
+    try:
+        return RequestSource(raw) if raw else RequestSource.external
+    except ValueError:
+        return RequestSource.external
 
 
 _fpvr_service: FPVRRequestService | None = None

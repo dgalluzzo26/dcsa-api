@@ -1,0 +1,3268 @@
+openapi: 3.1.0
+info:
+  title: DCSA API
+  description: 'Backend FastAPI service for DCSA on Databricks Apps.
+
+
+    ## Docs
+
+    - FPVR catalog (schemas + scenarios): [`/api/v1/catalog`](/api/v1/catalog)
+
+    - Human-readable help: [`/help`](/help)
+
+    - Interactive Swagger UI: [`/docs`](/docs)
+
+    - ReDoc: [`/redoc`](/redoc)
+
+    - OpenAPI JSON: [`/openapi.json`](/openapi.json)
+
+
+    Layering: **routes** (HTTP) → **services** (business logic) → **models** (schemas).'
+  contact:
+    name: DCSA API
+  version: 0.5.2
+paths:
+  /api/v1/subject-identities:
+    get:
+      tags:
+      - subject-identity
+      summary: Search subject identities (OBO SQL)
+      description: 'Search subject identities using query-string filters.
+
+
+        At least one of `ssn`, `first_name`, `last_name` or `date_of_birth` is required.'
+      operationId: list_subject_identities_api_v1_subject_identities_get
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: ssn
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Social Security Number
+          title: Ssn
+        description: Social Security Number
+      - name: first_name
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: First Name
+      - name: last_name
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Last Name
+      - name: date_of_birth
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: date
+          - type: 'null'
+          description: YYYY-MM-DD
+          title: Date Of Birth
+        description: YYYY-MM-DD
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 200
+          minimum: 1
+          default: 50
+          title: Limit
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SubjectIdentityListResponse'
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Bad Request
+        '401':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Unauthorized
+        '502':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Bad Gateway
+        '503':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Service Unavailable
+  /api/v1/subject-identities/search:
+    post:
+      tags:
+      - subject-identity
+      summary: Search subject identities (OBO SQL, JSON body)
+      description: 'Search subject identities using a JSON body.
+
+
+        Prefer this over the GET endpoint so SSNs are not written to URLs and access logs.'
+      operationId: search_subject_identities_api_v1_subject_identities_search_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SubjectIdentitySearch'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SubjectIdentityListResponse'
+        '400':
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '502':
+          description: Bad Gateway
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: Service Unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+      security:
+      - HTTPBearer: []
+  /api/v1/requests/fpvr-1:
+    post:
+      tags:
+      - fpvr-requests
+      summary: Open an official FPVR-1 Application Bundle request
+      description: 'Create an FPVR-1 request. Report code is implied by the path.
+
+
+        Returns a typed Application Bundle payload when ready.'
+      operationId: create_fpvr1_request_api_v1_requests_fpvr_1_post
+      security:
+      - HTTPBearer: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FPVR1RequestCreate'
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FPVR1RequestAccepted'
+        '401':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Unauthorized
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Not Found
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Bad Request
+        '409':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AmbiguousSubjectResponse'
+          description: Conflict
+        '502':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Bad Gateway
+        '503':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Service Unavailable
+    get:
+      tags:
+      - fpvr-requests
+      summary: List official FPVR-1 Application Bundle requests
+      description: 'Return FPVR-1 request log rows matching optional filters.
+
+
+        Filters AND together. Nested ``report`` is not assembled; GET by id for a ready payload.'
+      operationId: list_fpvr1_requests_api_v1_requests_fpvr_1_get
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: status
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - $ref: '#/components/schemas/RequestStatusValue'
+          - type: 'null'
+          title: Status
+      - name: requested_by
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Requested By
+      - name: requested_at_after
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          description: Inclusive lower bound on requested_at (ISO-8601). Alone this is after;
+            with requested_at_before this is between.
+          title: Requested At After
+        description: Inclusive lower bound on requested_at (ISO-8601). Alone this is after;
+          with requested_at_before this is between.
+      - name: requested_at_before
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          description: Inclusive upper bound on requested_at (ISO-8601). Alone this is before;
+            with requested_at_after this is between.
+          title: Requested At Before
+        description: Inclusive upper bound on requested_at (ISO-8601). Alone this is before;
+          with requested_at_after this is between.
+      - name: resolution_method
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Resolution Method
+      - name: source
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - $ref: '#/components/schemas/RequestSource'
+          - type: 'null'
+          title: Source
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 200
+          minimum: 1
+          default: 50
+          title: Limit
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FPVR1RequestListResponse'
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Bad Request
+        '401':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Unauthorized
+        '502':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Bad Gateway
+        '503':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Service Unavailable
+  /api/v1/requests/fpvr-1/{request_id}:
+    get:
+      tags:
+      - fpvr-requests
+      summary: Get an official FPVR-1 Application Bundle request
+      description: 'Return the same typed body as POST /v1/requests/fpvr-1.
+
+
+        Unknown ids or requests logged for another report code return 404.'
+      operationId: get_fpvr1_request_api_v1_requests_fpvr_1__request_id__get
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: request_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Request Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FPVR1RequestAccepted'
+        '401':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Unauthorized
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Not Found
+        '502':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Bad Gateway
+        '503':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Service Unavailable
+        '400':
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/requests/fpvr-2:
+    post:
+      tags:
+      - fpvr-requests
+      summary: Open an official FPVR-2 Investigation Summary request
+      description: Create an FPVR-2 request. Report code is implied by the path.
+      operationId: create_fpvr2_request_api_v1_requests_fpvr_2_post
+      security:
+      - HTTPBearer: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FPVR2RequestCreate'
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FPVR2RequestAccepted'
+        '401':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Unauthorized
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Not Found
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Bad Request
+        '409':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AmbiguousSubjectResponse'
+          description: Conflict
+        '502':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Bad Gateway
+        '503':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Service Unavailable
+    get:
+      tags:
+      - fpvr-requests
+      summary: List official FPVR-2 Investigation Summary requests
+      description: Return FPVR-2 request log rows matching optional filters.
+      operationId: list_fpvr2_requests_api_v1_requests_fpvr_2_get
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: status
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - $ref: '#/components/schemas/RequestStatusValue'
+          - type: 'null'
+          title: Status
+      - name: requested_by
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Requested By
+      - name: requested_at_after
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          description: Inclusive lower bound on requested_at (ISO-8601). Alone this is after;
+            with requested_at_before this is between.
+          title: Requested At After
+        description: Inclusive lower bound on requested_at (ISO-8601). Alone this is after;
+          with requested_at_before this is between.
+      - name: requested_at_before
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          description: Inclusive upper bound on requested_at (ISO-8601). Alone this is before;
+            with requested_at_after this is between.
+          title: Requested At Before
+        description: Inclusive upper bound on requested_at (ISO-8601). Alone this is before;
+          with requested_at_after this is between.
+      - name: resolution_method
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Resolution Method
+      - name: source
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - $ref: '#/components/schemas/RequestSource'
+          - type: 'null'
+          title: Source
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 200
+          minimum: 1
+          default: 50
+          title: Limit
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FPVR2RequestListResponse'
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Bad Request
+        '401':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Unauthorized
+        '502':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Bad Gateway
+        '503':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Service Unavailable
+  /api/v1/requests/fpvr-2/{request_id}:
+    get:
+      tags:
+      - fpvr-requests
+      summary: Get an official FPVR-2 Investigation Summary request
+      description: Return the same typed body as POST /v1/requests/fpvr-2.
+      operationId: get_fpvr2_request_api_v1_requests_fpvr_2__request_id__get
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: request_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Request Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FPVR2RequestAccepted'
+        '401':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Unauthorized
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Not Found
+        '502':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Bad Gateway
+        '503':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Service Unavailable
+        '400':
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/requests/fpvr-3:
+    post:
+      tags:
+      - fpvr-requests
+      summary: Open an official FPVR-3 Adjudication Summary request
+      description: Create an FPVR-3 request. Report code is implied by the path.
+      operationId: create_fpvr3_request_api_v1_requests_fpvr_3_post
+      security:
+      - HTTPBearer: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FPVR3RequestCreate'
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FPVR3RequestAccepted'
+        '401':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Unauthorized
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Not Found
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Bad Request
+        '409':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AmbiguousSubjectResponse'
+          description: Conflict
+        '502':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Bad Gateway
+        '503':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Service Unavailable
+    get:
+      tags:
+      - fpvr-requests
+      summary: List official FPVR-3 Adjudication Summary requests
+      description: Return FPVR-3 request log rows matching optional filters.
+      operationId: list_fpvr3_requests_api_v1_requests_fpvr_3_get
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: status
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - $ref: '#/components/schemas/RequestStatusValue'
+          - type: 'null'
+          title: Status
+      - name: requested_by
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Requested By
+      - name: requested_at_after
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          description: Inclusive lower bound on requested_at (ISO-8601). Alone this is after;
+            with requested_at_before this is between.
+          title: Requested At After
+        description: Inclusive lower bound on requested_at (ISO-8601). Alone this is after;
+          with requested_at_before this is between.
+      - name: requested_at_before
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          description: Inclusive upper bound on requested_at (ISO-8601). Alone this is before;
+            with requested_at_after this is between.
+          title: Requested At Before
+        description: Inclusive upper bound on requested_at (ISO-8601). Alone this is before;
+          with requested_at_after this is between.
+      - name: resolution_method
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Resolution Method
+      - name: source
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - $ref: '#/components/schemas/RequestSource'
+          - type: 'null'
+          title: Source
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 200
+          minimum: 1
+          default: 50
+          title: Limit
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FPVR3RequestListResponse'
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Bad Request
+        '401':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Unauthorized
+        '502':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Bad Gateway
+        '503':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Service Unavailable
+  /api/v1/requests/fpvr-3/{request_id}:
+    get:
+      tags:
+      - fpvr-requests
+      summary: Get an official FPVR-3 Adjudication Summary request
+      description: Return the same typed body as POST /v1/requests/fpvr-3.
+      operationId: get_fpvr3_request_api_v1_requests_fpvr_3__request_id__get
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: request_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Request Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FPVR3RequestAccepted'
+        '401':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Unauthorized
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Not Found
+        '502':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Bad Gateway
+        '503':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Service Unavailable
+        '400':
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/requests/fpvr-4:
+    post:
+      tags:
+      - fpvr-requests
+      summary: Open an official FPVR-4 CV Summary request
+      description: Create an FPVR-4 request. Report code is implied by the path.
+      operationId: create_fpvr4_request_api_v1_requests_fpvr_4_post
+      security:
+      - HTTPBearer: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FPVR4RequestCreate'
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FPVR4RequestAccepted'
+        '401':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Unauthorized
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Not Found
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Bad Request
+        '409':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AmbiguousSubjectResponse'
+          description: Conflict
+        '502':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Bad Gateway
+        '503':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Service Unavailable
+    get:
+      tags:
+      - fpvr-requests
+      summary: List official FPVR-4 CV Summary requests
+      description: Return FPVR-4 request log rows matching optional filters.
+      operationId: list_fpvr4_requests_api_v1_requests_fpvr_4_get
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: status
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - $ref: '#/components/schemas/RequestStatusValue'
+          - type: 'null'
+          title: Status
+      - name: requested_by
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Requested By
+      - name: requested_at_after
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          description: Inclusive lower bound on requested_at (ISO-8601). Alone this is after;
+            with requested_at_before this is between.
+          title: Requested At After
+        description: Inclusive lower bound on requested_at (ISO-8601). Alone this is after;
+          with requested_at_before this is between.
+      - name: requested_at_before
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          description: Inclusive upper bound on requested_at (ISO-8601). Alone this is before;
+            with requested_at_after this is between.
+          title: Requested At Before
+        description: Inclusive upper bound on requested_at (ISO-8601). Alone this is before;
+          with requested_at_after this is between.
+      - name: resolution_method
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Resolution Method
+      - name: source
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - $ref: '#/components/schemas/RequestSource'
+          - type: 'null'
+          title: Source
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 200
+          minimum: 1
+          default: 50
+          title: Limit
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FPVR4RequestListResponse'
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Bad Request
+        '401':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Unauthorized
+        '502':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Bad Gateway
+        '503':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Service Unavailable
+  /api/v1/requests/fpvr-4/{request_id}:
+    get:
+      tags:
+      - fpvr-requests
+      summary: Get an official FPVR-4 CV Summary request
+      description: Return the same typed body as POST /v1/requests/fpvr-4.
+      operationId: get_fpvr4_request_api_v1_requests_fpvr_4__request_id__get
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: request_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Request Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FPVR4RequestAccepted'
+        '401':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Unauthorized
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Not Found
+        '502':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Bad Gateway
+        '503':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Service Unavailable
+        '400':
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/requests/fpvr-5:
+    post:
+      tags:
+      - fpvr-requests
+      summary: Open an official FPVR-5 CV Alerts request
+      description: Create an FPVR-5 request. Report code is implied by the path.
+      operationId: create_fpvr5_request_api_v1_requests_fpvr_5_post
+      security:
+      - HTTPBearer: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FPVR5RequestCreate'
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FPVR5RequestAccepted'
+        '401':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Unauthorized
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Not Found
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Bad Request
+        '409':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AmbiguousSubjectResponse'
+          description: Conflict
+        '502':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Bad Gateway
+        '503':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Service Unavailable
+    get:
+      tags:
+      - fpvr-requests
+      summary: List official FPVR-5 CV Alerts requests
+      description: Return FPVR-5 request log rows matching optional filters.
+      operationId: list_fpvr5_requests_api_v1_requests_fpvr_5_get
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: status
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - $ref: '#/components/schemas/RequestStatusValue'
+          - type: 'null'
+          title: Status
+      - name: requested_by
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Requested By
+      - name: requested_at_after
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          description: Inclusive lower bound on requested_at (ISO-8601). Alone this is after;
+            with requested_at_before this is between.
+          title: Requested At After
+        description: Inclusive lower bound on requested_at (ISO-8601). Alone this is after;
+          with requested_at_before this is between.
+      - name: requested_at_before
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          description: Inclusive upper bound on requested_at (ISO-8601). Alone this is before;
+            with requested_at_after this is between.
+          title: Requested At Before
+        description: Inclusive upper bound on requested_at (ISO-8601). Alone this is before;
+          with requested_at_after this is between.
+      - name: resolution_method
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Resolution Method
+      - name: source
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - $ref: '#/components/schemas/RequestSource'
+          - type: 'null'
+          title: Source
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 200
+          minimum: 1
+          default: 50
+          title: Limit
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FPVR5RequestListResponse'
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Bad Request
+        '401':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Unauthorized
+        '502':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Bad Gateway
+        '503':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Service Unavailable
+  /api/v1/requests/fpvr-5/{request_id}:
+    get:
+      tags:
+      - fpvr-requests
+      summary: Get an official FPVR-5 CV Alerts request
+      description: Return the same typed body as POST /v1/requests/fpvr-5.
+      operationId: get_fpvr5_request_api_v1_requests_fpvr_5__request_id__get
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: request_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Request Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FPVR5RequestAccepted'
+        '401':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Unauthorized
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Not Found
+        '502':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Bad Gateway
+        '503':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Service Unavailable
+        '400':
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/requests/fpvr-6:
+    post:
+      tags:
+      - fpvr-requests
+      summary: Open an official FPVR-6 Human Capital request
+      description: Create an FPVR-6 request. Report code is implied by the path.
+      operationId: create_fpvr6_request_api_v1_requests_fpvr_6_post
+      security:
+      - HTTPBearer: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FPVR6RequestCreate'
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FPVR6RequestAccepted'
+        '401':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Unauthorized
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Not Found
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Bad Request
+        '409':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AmbiguousSubjectResponse'
+          description: Conflict
+        '502':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Bad Gateway
+        '503':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Service Unavailable
+    get:
+      tags:
+      - fpvr-requests
+      summary: List official FPVR-6 Human Capital requests
+      description: Return FPVR-6 request log rows matching optional filters.
+      operationId: list_fpvr6_requests_api_v1_requests_fpvr_6_get
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: status
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - $ref: '#/components/schemas/RequestStatusValue'
+          - type: 'null'
+          title: Status
+      - name: requested_by
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Requested By
+      - name: requested_at_after
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          description: Inclusive lower bound on requested_at (ISO-8601). Alone this is after;
+            with requested_at_before this is between.
+          title: Requested At After
+        description: Inclusive lower bound on requested_at (ISO-8601). Alone this is after;
+          with requested_at_before this is between.
+      - name: requested_at_before
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          description: Inclusive upper bound on requested_at (ISO-8601). Alone this is before;
+            with requested_at_after this is between.
+          title: Requested At Before
+        description: Inclusive upper bound on requested_at (ISO-8601). Alone this is before;
+          with requested_at_after this is between.
+      - name: resolution_method
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Resolution Method
+      - name: source
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - $ref: '#/components/schemas/RequestSource'
+          - type: 'null'
+          title: Source
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 200
+          minimum: 1
+          default: 50
+          title: Limit
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FPVR6RequestListResponse'
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Bad Request
+        '401':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Unauthorized
+        '502':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Bad Gateway
+        '503':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Service Unavailable
+  /api/v1/requests/fpvr-6/{request_id}:
+    get:
+      tags:
+      - fpvr-requests
+      summary: Get an official FPVR-6 Human Capital request
+      description: Return the same typed body as POST /v1/requests/fpvr-6.
+      operationId: get_fpvr6_request_api_v1_requests_fpvr_6__request_id__get
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: request_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Request Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FPVR6RequestAccepted'
+        '401':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Unauthorized
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Not Found
+        '502':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Bad Gateway
+        '503':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Service Unavailable
+        '400':
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/requests/fpvr-7:
+    post:
+      tags:
+      - fpvr-requests
+      summary: Open an official FPVR-7 Favorable to Onboard request
+      description: Create an FPVR-7 request. Report code is implied by the path.
+      operationId: create_fpvr7_request_api_v1_requests_fpvr_7_post
+      security:
+      - HTTPBearer: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FPVR7RequestCreate'
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FPVR7RequestAccepted'
+        '401':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Unauthorized
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Not Found
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Bad Request
+        '409':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AmbiguousSubjectResponse'
+          description: Conflict
+        '502':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Bad Gateway
+        '503':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Service Unavailable
+    get:
+      tags:
+      - fpvr-requests
+      summary: List official FPVR-7 Favorable to Onboard requests
+      description: Return FPVR-7 request log rows matching optional filters.
+      operationId: list_fpvr7_requests_api_v1_requests_fpvr_7_get
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: status
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - $ref: '#/components/schemas/RequestStatusValue'
+          - type: 'null'
+          title: Status
+      - name: requested_by
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Requested By
+      - name: requested_at_after
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          description: Inclusive lower bound on requested_at (ISO-8601). Alone this is after;
+            with requested_at_before this is between.
+          title: Requested At After
+        description: Inclusive lower bound on requested_at (ISO-8601). Alone this is after;
+          with requested_at_before this is between.
+      - name: requested_at_before
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          description: Inclusive upper bound on requested_at (ISO-8601). Alone this is before;
+            with requested_at_after this is between.
+          title: Requested At Before
+        description: Inclusive upper bound on requested_at (ISO-8601). Alone this is before;
+          with requested_at_after this is between.
+      - name: resolution_method
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Resolution Method
+      - name: source
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - $ref: '#/components/schemas/RequestSource'
+          - type: 'null'
+          title: Source
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 200
+          minimum: 1
+          default: 50
+          title: Limit
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FPVR7RequestListResponse'
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Bad Request
+        '401':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Unauthorized
+        '502':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Bad Gateway
+        '503':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Service Unavailable
+  /api/v1/requests/fpvr-7/{request_id}:
+    get:
+      tags:
+      - fpvr-requests
+      summary: Get an official FPVR-7 Favorable to Onboard request
+      description: Return the same typed body as POST /v1/requests/fpvr-7.
+      operationId: get_fpvr7_request_api_v1_requests_fpvr_7__request_id__get
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: request_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Request Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FPVR7RequestAccepted'
+        '401':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Unauthorized
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Not Found
+        '502':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Bad Gateway
+        '503':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Service Unavailable
+        '400':
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/catalog:
+    get:
+      tags:
+      - catalog
+      summary: FPVR API catalog (schemas, scenarios, per-report examples)
+      description: 'Return the caller contract for token, request, status, and response APIs.
+
+
+        Includes HTTP scenarios and the exact ``data`` section fields for each
+
+        configured report.'
+      operationId: get_catalog_api_v1_catalog_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiCatalog'
+  /api/health:
+    get:
+      tags:
+      - system
+      summary: Health check
+      description: Report that the service is running.
+      operationId: health_api_health_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+  /api/me:
+    get:
+      tags:
+      - system
+      summary: Signed-in identity (Databricks Apps headers)
+      description: Return the signed-in caller as seen through Databricks Apps headers.
+      operationId: me_api_me_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MeResponse'
+components:
+  schemas:
+    ActivitySectionRow:
+      properties:
+        ACTIVITY_ID:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Activity Id
+        LOCATION_CODE:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Location Code
+        ACTIVITY_TYPE:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Activity Type
+        DETAIL:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Detail
+        EVENT_TS:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Event Ts
+        LOAD_SEQ:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Load Seq
+      additionalProperties: false
+      type: object
+      title: ActivitySectionRow
+      description: Public activity section row (SSN omitted).
+    AmbiguousSubjectResponse:
+      properties:
+        detail:
+          type: string
+          title: Detail
+          default: Multiple subjects matched; provide more information or candidate_id
+        candidates:
+          items:
+            $ref: '#/components/schemas/SubjectCandidate'
+          type: array
+          title: Candidates
+        total:
+          type: integer
+          title: Total
+      type: object
+      required:
+      - candidates
+      - total
+      title: AmbiguousSubjectResponse
+      description: "Returned when identity filters match more than one person.\n\nAttributes:\n\
+        \    detail: Human-readable explanation.\n    candidates: Matches without SSN.\n \
+        \   total: Number of candidates returned."
+    ApiCatalog:
+      properties:
+        title:
+          type: string
+          title: Title
+        version:
+          type: string
+          title: Version
+        apis:
+          items:
+            $ref: '#/components/schemas/CatalogApi'
+          type: array
+          title: Apis
+        reports:
+          items:
+            $ref: '#/components/schemas/CatalogReport'
+          type: array
+          title: Reports
+        notes:
+          items:
+            type: string
+          type: array
+          title: Notes
+      type: object
+      required:
+      - title
+      - version
+      - apis
+      - reports
+      - notes
+      title: ApiCatalog
+      description: Machine-readable help for callers of the FPVR APIs.
+    CatalogApi:
+      properties:
+        id:
+          type: string
+          title: Id
+        method:
+          type: string
+          title: Method
+        path:
+          type: string
+          title: Path
+        auth:
+          type: string
+          title: Auth
+        summary:
+          type: string
+          title: Summary
+        request_body:
+          anyOf:
+          - additionalProperties: true
+            type: object
+          - type: 'null'
+          title: Request Body
+        scenarios:
+          items:
+            $ref: '#/components/schemas/CatalogScenario'
+          type: array
+          title: Scenarios
+      type: object
+      required:
+      - id
+      - method
+      - path
+      - auth
+      - summary
+      - scenarios
+      title: CatalogApi
+      description: One FPVR HTTP API (token, create, list, or get by id).
+    CatalogField:
+      properties:
+        name:
+          type: string
+          title: Name
+        type:
+          type: string
+          title: Type
+        nullable:
+          type: boolean
+          title: Nullable
+          default: true
+      type: object
+      required:
+      - name
+      - type
+      title: CatalogField
+      description: One JSON field in a report section row.
+    CatalogReport:
+      properties:
+        report_code:
+          type: string
+          title: Report Code
+        title:
+          type: string
+          title: Title
+        sources:
+          items:
+            type: string
+          type: array
+          title: Sources
+        tables:
+          items:
+            type: string
+          type: array
+          title: Tables
+        readiness:
+          type: string
+          title: Readiness
+        data_fields:
+          additionalProperties:
+            items:
+              $ref: '#/components/schemas/CatalogField'
+            type: array
+          type: object
+          title: Data Fields
+        example_response:
+          additionalProperties: true
+          type: object
+          title: Example Response
+      type: object
+      required:
+      - report_code
+      - title
+      - sources
+      - tables
+      - readiness
+      - data_fields
+      - example_response
+      title: CatalogReport
+      description: Per-report payload contract nested in request.report.
+    CatalogScenario:
+      properties:
+        id:
+          type: string
+          title: Id
+        http_status:
+          type: integer
+          title: Http Status
+        summary:
+          type: string
+          title: Summary
+        request:
+          anyOf:
+          - additionalProperties: true
+            type: object
+          - type: 'null'
+          title: Request
+        response:
+          additionalProperties: true
+          type: object
+          title: Response
+      type: object
+      required:
+      - id
+      - http_status
+      - summary
+      - response
+      title: CatalogScenario
+      description: One HTTP outcome for an API.
+    CheckSectionRow:
+      properties:
+        CHECK_ID:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Check Id
+        LOCATION_CODE:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Location Code
+        CHECK_TYPE:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Check Type
+        RESULT_CODE:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Result Code
+        RESULT_SCORE:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Result Score
+        CHECKED_TS:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Checked Ts
+        LOAD_SEQ:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Load Seq
+      additionalProperties: false
+      type: object
+      title: CheckSectionRow
+      description: Public check section row (SSN omitted).
+    ErrorResponse:
+      properties:
+        detail:
+          type: string
+          title: Detail
+        request_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Request Id
+      type: object
+      required:
+      - detail
+      title: ErrorResponse
+      description: "Standard error body returned with non-2xx responses.\n\nAttributes:\n\
+        \    detail: Human-readable error message.\n    request_id: Correlation id also sent\
+        \ as ``X-Request-Id``."
+    FPVR1Report:
+      properties:
+        code:
+          $ref: '#/components/schemas/ReportCode'
+          default: FPVR-1
+        title:
+          type: string
+          title: Title
+          default: Application Bundle
+        subject:
+          $ref: '#/components/schemas/IdentitySectionRow'
+        data:
+          $ref: '#/components/schemas/FPVR1ReportData'
+      type: object
+      required:
+      - subject
+      - data
+      title: FPVR1Report
+      description: Typed Application Bundle payload.
+    FPVR1ReportData:
+      properties:
+        identity:
+          items:
+            $ref: '#/components/schemas/IdentitySectionRow'
+          type: array
+          title: Identity
+        status:
+          items:
+            $ref: '#/components/schemas/StatusSectionRow'
+          type: array
+          title: Status
+        check:
+          items:
+            $ref: '#/components/schemas/CheckSectionRow'
+          type: array
+          title: Check
+      type: object
+      title: FPVR1ReportData
+      description: 'FPVR-1 ``data`` sections: identity, status, and check.'
+    FPVR1RequestAccepted:
+      properties:
+        request_id:
+          type: string
+          title: Request Id
+        status:
+          $ref: '#/components/schemas/RequestStatusValue'
+        requested_at:
+          type: string
+          title: Requested At
+        requested_by:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Requested By
+        resolution_method:
+          type: string
+          title: Resolution Method
+        source:
+          $ref: '#/components/schemas/RequestSource'
+          default: external
+        report:
+          anyOf:
+          - $ref: '#/components/schemas/FPVR1Report'
+          - type: 'null'
+      type: object
+      required:
+      - request_id
+      - status
+      - requested_at
+      - resolution_method
+      title: FPVR1RequestAccepted
+      description: FPVR-1 request envelope. ``report`` is set when status is ready.
+    FPVR1RequestCreate:
+      properties:
+        ssn:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Ssn
+        first_name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: First Name
+        last_name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Last Name
+        date_of_birth:
+          anyOf:
+          - type: string
+            format: date
+          - type: 'null'
+          title: Date Of Birth
+        candidate_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Candidate Id
+          examples:
+          - abc.def
+      type: object
+      title: FPVR1RequestCreate
+      description: Body for opening an FPVR-1 request. Report code is implied by the route.
+    FPVR1RequestListResponse:
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/FPVR1RequestAccepted'
+          type: array
+          title: Items
+        total:
+          type: integer
+          title: Total
+      type: object
+      required:
+      - items
+      - total
+      title: FPVR1RequestListResponse
+      description: Result set for GET /requests/fpvr-1. ``report`` is not assembled.
+    FPVR2Report:
+      properties:
+        code:
+          $ref: '#/components/schemas/ReportCode'
+          default: FPVR-2
+        title:
+          type: string
+          title: Title
+          default: Investigation Summary
+        subject:
+          $ref: '#/components/schemas/IdentitySectionRow'
+        data:
+          $ref: '#/components/schemas/FPVR2ReportData'
+      type: object
+      required:
+      - subject
+      - data
+      title: FPVR2Report
+      description: Typed Investigation Summary payload.
+    FPVR2ReportData:
+      properties:
+        check:
+          items:
+            $ref: '#/components/schemas/CheckSectionRow'
+          type: array
+          title: Check
+        activity:
+          items:
+            $ref: '#/components/schemas/ActivitySectionRow'
+          type: array
+          title: Activity
+      type: object
+      title: FPVR2ReportData
+      description: 'FPVR-2 ``data`` sections: check and activity.'
+    FPVR2RequestAccepted:
+      properties:
+        request_id:
+          type: string
+          title: Request Id
+        status:
+          $ref: '#/components/schemas/RequestStatusValue'
+        requested_at:
+          type: string
+          title: Requested At
+        requested_by:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Requested By
+        resolution_method:
+          type: string
+          title: Resolution Method
+        source:
+          $ref: '#/components/schemas/RequestSource'
+          default: external
+        report:
+          anyOf:
+          - $ref: '#/components/schemas/FPVR2Report'
+          - type: 'null'
+      type: object
+      required:
+      - request_id
+      - status
+      - requested_at
+      - resolution_method
+      title: FPVR2RequestAccepted
+      description: FPVR-2 request envelope. ``report`` is set when status is ready.
+    FPVR2RequestCreate:
+      properties:
+        ssn:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Ssn
+        first_name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: First Name
+        last_name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Last Name
+        date_of_birth:
+          anyOf:
+          - type: string
+            format: date
+          - type: 'null'
+          title: Date Of Birth
+        candidate_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Candidate Id
+          examples:
+          - abc.def
+      type: object
+      title: FPVR2RequestCreate
+      description: Body for opening an FPVR-2 request. Report code is implied by the route.
+    FPVR2RequestListResponse:
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/FPVR2RequestAccepted'
+          type: array
+          title: Items
+        total:
+          type: integer
+          title: Total
+      type: object
+      required:
+      - items
+      - total
+      title: FPVR2RequestListResponse
+      description: Result set for GET /requests/fpvr-2. ``report`` is not assembled.
+    FPVR3Report:
+      properties:
+        code:
+          $ref: '#/components/schemas/ReportCode'
+          default: FPVR-3
+        title:
+          type: string
+          title: Title
+          default: Adjudication Summary
+        subject:
+          $ref: '#/components/schemas/IdentitySectionRow'
+        data:
+          $ref: '#/components/schemas/FPVR3ReportData'
+      type: object
+      required:
+      - subject
+      - data
+      title: FPVR3Report
+      description: Typed Adjudication Summary payload.
+    FPVR3ReportData:
+      properties:
+        status:
+          items:
+            $ref: '#/components/schemas/StatusSectionRow'
+          type: array
+          title: Status
+        check:
+          items:
+            $ref: '#/components/schemas/CheckSectionRow'
+          type: array
+          title: Check
+      type: object
+      title: FPVR3ReportData
+      description: 'FPVR-3 ``data`` sections: status and check.'
+    FPVR3RequestAccepted:
+      properties:
+        request_id:
+          type: string
+          title: Request Id
+        status:
+          $ref: '#/components/schemas/RequestStatusValue'
+        requested_at:
+          type: string
+          title: Requested At
+        requested_by:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Requested By
+        resolution_method:
+          type: string
+          title: Resolution Method
+        source:
+          $ref: '#/components/schemas/RequestSource'
+          default: external
+        report:
+          anyOf:
+          - $ref: '#/components/schemas/FPVR3Report'
+          - type: 'null'
+      type: object
+      required:
+      - request_id
+      - status
+      - requested_at
+      - resolution_method
+      title: FPVR3RequestAccepted
+      description: FPVR-3 request envelope. ``report`` is set when status is ready.
+    FPVR3RequestCreate:
+      properties:
+        ssn:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Ssn
+        first_name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: First Name
+        last_name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Last Name
+        date_of_birth:
+          anyOf:
+          - type: string
+            format: date
+          - type: 'null'
+          title: Date Of Birth
+        candidate_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Candidate Id
+          examples:
+          - abc.def
+      type: object
+      title: FPVR3RequestCreate
+      description: Body for opening an FPVR-3 request. Report code is implied by the route.
+    FPVR3RequestListResponse:
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/FPVR3RequestAccepted'
+          type: array
+          title: Items
+        total:
+          type: integer
+          title: Total
+      type: object
+      required:
+      - items
+      - total
+      title: FPVR3RequestListResponse
+      description: Result set for GET /requests/fpvr-3. ``report`` is not assembled.
+    FPVR4Report:
+      properties:
+        code:
+          $ref: '#/components/schemas/ReportCode'
+          default: FPVR-4
+        title:
+          type: string
+          title: Title
+          default: CV Summary
+        subject:
+          $ref: '#/components/schemas/IdentitySectionRow'
+        data:
+          $ref: '#/components/schemas/FPVR4ReportData'
+      type: object
+      required:
+      - subject
+      - data
+      title: FPVR4Report
+      description: Typed CV Summary payload.
+    FPVR4ReportData:
+      properties:
+        identity:
+          items:
+            $ref: '#/components/schemas/IdentitySectionRow'
+          type: array
+          title: Identity
+        status:
+          items:
+            $ref: '#/components/schemas/StatusSectionRow'
+          type: array
+          title: Status
+      type: object
+      title: FPVR4ReportData
+      description: 'FPVR-4 ``data`` sections: identity and status.'
+    FPVR4RequestAccepted:
+      properties:
+        request_id:
+          type: string
+          title: Request Id
+        status:
+          $ref: '#/components/schemas/RequestStatusValue'
+        requested_at:
+          type: string
+          title: Requested At
+        requested_by:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Requested By
+        resolution_method:
+          type: string
+          title: Resolution Method
+        source:
+          $ref: '#/components/schemas/RequestSource'
+          default: external
+        report:
+          anyOf:
+          - $ref: '#/components/schemas/FPVR4Report'
+          - type: 'null'
+      type: object
+      required:
+      - request_id
+      - status
+      - requested_at
+      - resolution_method
+      title: FPVR4RequestAccepted
+      description: FPVR-4 request envelope. ``report`` is set when status is ready.
+    FPVR4RequestCreate:
+      properties:
+        ssn:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Ssn
+        first_name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: First Name
+        last_name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Last Name
+        date_of_birth:
+          anyOf:
+          - type: string
+            format: date
+          - type: 'null'
+          title: Date Of Birth
+        candidate_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Candidate Id
+          examples:
+          - abc.def
+      type: object
+      title: FPVR4RequestCreate
+      description: Body for opening an FPVR-4 request. Report code is implied by the route.
+    FPVR4RequestListResponse:
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/FPVR4RequestAccepted'
+          type: array
+          title: Items
+        total:
+          type: integer
+          title: Total
+      type: object
+      required:
+      - items
+      - total
+      title: FPVR4RequestListResponse
+      description: Result set for GET /requests/fpvr-4. ``report`` is not assembled.
+    FPVR5Report:
+      properties:
+        code:
+          $ref: '#/components/schemas/ReportCode'
+          default: FPVR-5
+        title:
+          type: string
+          title: Title
+          default: CV Alerts
+        subject:
+          $ref: '#/components/schemas/IdentitySectionRow'
+        data:
+          $ref: '#/components/schemas/FPVR5ReportData'
+      type: object
+      required:
+      - subject
+      - data
+      title: FPVR5Report
+      description: Typed CV Alerts payload.
+    FPVR5ReportData:
+      properties:
+        signal:
+          items:
+            $ref: '#/components/schemas/SignalSectionRow'
+          type: array
+          title: Signal
+      type: object
+      title: FPVR5ReportData
+      description: 'FPVR-5 ``data`` sections: signal.'
+    FPVR5RequestAccepted:
+      properties:
+        request_id:
+          type: string
+          title: Request Id
+        status:
+          $ref: '#/components/schemas/RequestStatusValue'
+        requested_at:
+          type: string
+          title: Requested At
+        requested_by:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Requested By
+        resolution_method:
+          type: string
+          title: Resolution Method
+        source:
+          $ref: '#/components/schemas/RequestSource'
+          default: external
+        report:
+          anyOf:
+          - $ref: '#/components/schemas/FPVR5Report'
+          - type: 'null'
+      type: object
+      required:
+      - request_id
+      - status
+      - requested_at
+      - resolution_method
+      title: FPVR5RequestAccepted
+      description: FPVR-5 request envelope. ``report`` is set when status is ready.
+    FPVR5RequestCreate:
+      properties:
+        ssn:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Ssn
+        first_name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: First Name
+        last_name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Last Name
+        date_of_birth:
+          anyOf:
+          - type: string
+            format: date
+          - type: 'null'
+          title: Date Of Birth
+        candidate_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Candidate Id
+          examples:
+          - abc.def
+      type: object
+      title: FPVR5RequestCreate
+      description: Body for opening an FPVR-5 request. Report code is implied by the route.
+    FPVR5RequestListResponse:
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/FPVR5RequestAccepted'
+          type: array
+          title: Items
+        total:
+          type: integer
+          title: Total
+      type: object
+      required:
+      - items
+      - total
+      title: FPVR5RequestListResponse
+      description: Result set for GET /requests/fpvr-5. ``report`` is not assembled.
+    FPVR6Report:
+      properties:
+        code:
+          $ref: '#/components/schemas/ReportCode'
+          default: FPVR-6
+        title:
+          type: string
+          title: Title
+          default: Human Capital
+        subject:
+          $ref: '#/components/schemas/IdentitySectionRow'
+        data:
+          $ref: '#/components/schemas/FPVR6ReportData'
+      type: object
+      required:
+      - subject
+      - data
+      title: FPVR6Report
+      description: Typed Human Capital payload.
+    FPVR6ReportData:
+      properties:
+        identity:
+          items:
+            $ref: '#/components/schemas/IdentitySectionRow'
+          type: array
+          title: Identity
+        status:
+          items:
+            $ref: '#/components/schemas/StatusSectionRow'
+          type: array
+          title: Status
+      type: object
+      title: FPVR6ReportData
+      description: 'FPVR-6 ``data`` sections: identity and status.'
+    FPVR6RequestAccepted:
+      properties:
+        request_id:
+          type: string
+          title: Request Id
+        status:
+          $ref: '#/components/schemas/RequestStatusValue'
+        requested_at:
+          type: string
+          title: Requested At
+        requested_by:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Requested By
+        resolution_method:
+          type: string
+          title: Resolution Method
+        source:
+          $ref: '#/components/schemas/RequestSource'
+          default: external
+        report:
+          anyOf:
+          - $ref: '#/components/schemas/FPVR6Report'
+          - type: 'null'
+      type: object
+      required:
+      - request_id
+      - status
+      - requested_at
+      - resolution_method
+      title: FPVR6RequestAccepted
+      description: FPVR-6 request envelope. ``report`` is set when status is ready.
+    FPVR6RequestCreate:
+      properties:
+        ssn:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Ssn
+        first_name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: First Name
+        last_name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Last Name
+        date_of_birth:
+          anyOf:
+          - type: string
+            format: date
+          - type: 'null'
+          title: Date Of Birth
+        candidate_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Candidate Id
+          examples:
+          - abc.def
+      type: object
+      title: FPVR6RequestCreate
+      description: Body for opening an FPVR-6 request. Report code is implied by the route.
+    FPVR6RequestListResponse:
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/FPVR6RequestAccepted'
+          type: array
+          title: Items
+        total:
+          type: integer
+          title: Total
+      type: object
+      required:
+      - items
+      - total
+      title: FPVR6RequestListResponse
+      description: Result set for GET /requests/fpvr-6. ``report`` is not assembled.
+    FPVR7Report:
+      properties:
+        code:
+          $ref: '#/components/schemas/ReportCode'
+          default: FPVR-7
+        title:
+          type: string
+          title: Title
+          default: Favorable to Onboard
+        subject:
+          $ref: '#/components/schemas/IdentitySectionRow'
+        data:
+          $ref: '#/components/schemas/FPVR7ReportData'
+      type: object
+      required:
+      - subject
+      - data
+      title: FPVR7Report
+      description: Typed Favorable to Onboard payload.
+    FPVR7ReportData:
+      properties:
+        status:
+          items:
+            $ref: '#/components/schemas/StatusSectionRow'
+          type: array
+          title: Status
+      type: object
+      title: FPVR7ReportData
+      description: 'FPVR-7 ``data`` sections: status.'
+    FPVR7RequestAccepted:
+      properties:
+        request_id:
+          type: string
+          title: Request Id
+        status:
+          $ref: '#/components/schemas/RequestStatusValue'
+        requested_at:
+          type: string
+          title: Requested At
+        requested_by:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Requested By
+        resolution_method:
+          type: string
+          title: Resolution Method
+        source:
+          $ref: '#/components/schemas/RequestSource'
+          default: external
+        report:
+          anyOf:
+          - $ref: '#/components/schemas/FPVR7Report'
+          - type: 'null'
+      type: object
+      required:
+      - request_id
+      - status
+      - requested_at
+      - resolution_method
+      title: FPVR7RequestAccepted
+      description: FPVR-7 request envelope. ``report`` is set when status is ready.
+    FPVR7RequestCreate:
+      properties:
+        ssn:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Ssn
+        first_name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: First Name
+        last_name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Last Name
+        date_of_birth:
+          anyOf:
+          - type: string
+            format: date
+          - type: 'null'
+          title: Date Of Birth
+        candidate_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Candidate Id
+          examples:
+          - abc.def
+      type: object
+      title: FPVR7RequestCreate
+      description: Body for opening an FPVR-7 request. Report code is implied by the route.
+    FPVR7RequestListResponse:
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/FPVR7RequestAccepted'
+          type: array
+          title: Items
+        total:
+          type: integer
+          title: Total
+      type: object
+      required:
+      - items
+      - total
+      title: FPVR7RequestListResponse
+      description: Result set for GET /requests/fpvr-7. ``report`` is not assembled.
+    HTTPValidationError:
+      properties:
+        detail:
+          items:
+            $ref: '#/components/schemas/ValidationError'
+          type: array
+          title: Detail
+      type: object
+      title: HTTPValidationError
+    HealthResponse:
+      properties:
+        status:
+          type: string
+          title: Status
+          default: ok
+        app:
+          type: string
+          title: App
+        environment:
+          type: string
+          title: Environment
+        version:
+          type: string
+          title: Version
+      type: object
+      required:
+      - app
+      - environment
+      - version
+      title: HealthResponse
+      description: "Response body for the health check endpoint.\n\nAttributes:\n    status:\
+        \ Health status, ``\"ok\"`` when the service is running.\n    app: Application name.\n\
+        \    environment: Deployment environment (for example ``dev``).\n    version: Application\
+        \ version."
+    IdentitySectionRow:
+      properties:
+        FIRST_NAME:
+          type: string
+          title: First Name
+        LAST_NAME:
+          type: string
+          title: Last Name
+        DATE_OF_BIRTH:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Date Of Birth
+        PLACE_OF_BIRTH:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Place Of Birth
+        SEX:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Sex
+        CITIZENSHIP:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Citizenship
+        MARITAL_STATUS:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Marital Status
+        UPDATED_TS:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Updated Ts
+        RECORD_VERSION:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Record Version
+      additionalProperties: false
+      type: object
+      required:
+      - FIRST_NAME
+      - LAST_NAME
+      title: IdentitySectionRow
+      description: Public identity section row (SSN omitted).
+    MeResponse:
+      properties:
+        identity:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Identity
+        email:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Email
+        user:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: User
+        source:
+          type: string
+          title: Source
+          default: none
+      type: object
+      title: MeResponse
+      description: "Caller identity derived from Databricks Apps forwarded headers.\n\nAttributes:\n\
+        \    identity: Best available identifier (email, preferred username, or user).\n \
+        \   email: Value of ``x-forwarded-email``.\n    user: Value of ``x-forwarded-user``.\n\
+        \    source: ``\"header\"`` when an identity was found, otherwise ``\"none\"``."
+    ReportCode:
+      type: string
+      enum:
+      - FPVR-1
+      - FPVR-2
+      - FPVR-3
+      - FPVR-4
+      - FPVR-5
+      - FPVR-6
+      - FPVR-7
+      title: ReportCode
+      description: FPVR contract report requested by the caller.
+    RequestSource:
+      type: string
+      enum:
+      - internal
+      - external
+      title: RequestSource
+      description: Origin of an official FPVR request.
+    RequestStatusValue:
+      type: string
+      enum:
+      - pending
+      - ready
+      - failed
+      title: RequestStatusValue
+      description: Lifecycle of an official FPVR request.
+    SignalSectionRow:
+      properties:
+        SIGNAL_ID:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Signal Id
+        LOCATION_CODE:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Location Code
+        SIGNAL_TYPE:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Signal Type
+        SEVERITY:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Severity
+        SIGNAL_TS:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Signal Ts
+        LOAD_SEQ:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Load Seq
+      additionalProperties: false
+      type: object
+      title: SignalSectionRow
+      description: Public signal section row (SSN omitted).
+    StatusSectionRow:
+      properties:
+        ORG_CODE:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Org Code
+        POSITION_TITLE:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Position Title
+        DUTY_LOCATION:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Duty Location
+        RISK_TIER:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Risk Tier
+        ELIGIBILITY_LEVEL:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Eligibility Level
+        STATUS_CODE:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Status Code
+        STATUS_EFFECTIVE_DATE:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Status Effective Date
+        UPDATED_TS:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Updated Ts
+        RECORD_VERSION:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Record Version
+      additionalProperties: false
+      type: object
+      title: StatusSectionRow
+      description: Public status section row (SSN omitted).
+    SubjectCandidate:
+      properties:
+        candidate_id:
+          type: string
+          title: Candidate Id
+        FIRST_NAME:
+          type: string
+          title: First Name
+        LAST_NAME:
+          type: string
+          title: Last Name
+        DATE_OF_BIRTH:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Date Of Birth
+        PLACE_OF_BIRTH:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Place Of Birth
+        SEX:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Sex
+        CITIZENSHIP:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Citizenship
+        MARITAL_STATUS:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Marital Status
+      type: object
+      required:
+      - candidate_id
+      - FIRST_NAME
+      - LAST_NAME
+      title: SubjectCandidate
+      description: "A possible subject match without SSN.\n\nAttributes:\n    candidate_id:\
+        \ Opaque token to resubmit on POST /requests/fpvr-{n}.\n    FIRST_NAME: First name.\n\
+        \    LAST_NAME: Last name.\n    DATE_OF_BIRTH: Date of birth.\n    PLACE_OF_BIRTH:\
+        \ Place of birth.\n    SEX: Recorded sex.\n    CITIZENSHIP: Citizenship.\n    MARITAL_STATUS:\
+        \ Marital status."
+    SubjectIdentity:
+      properties:
+        SSN:
+          type: string
+          title: Ssn
+        FIRST_NAME:
+          type: string
+          title: First Name
+        LAST_NAME:
+          type: string
+          title: Last Name
+        DATE_OF_BIRTH:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Date Of Birth
+        PLACE_OF_BIRTH:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Place Of Birth
+        SEX:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Sex
+        CITIZENSHIP:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Citizenship
+        MARITAL_STATUS:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Marital Status
+        UPDATED_TS:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Updated Ts
+        RECORD_VERSION:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Record Version
+      type: object
+      required:
+      - SSN
+      - FIRST_NAME
+      - LAST_NAME
+      title: SubjectIdentity
+      description: "A single row from ``dcsa_catalog.edladmin.subject_identity``.\n\nAttributes:\n\
+        \    SSN: Social Security Number.\n    FIRST_NAME: Subject's first name.\n    LAST_NAME:\
+        \ Subject's last name.\n    DATE_OF_BIRTH: Subject's date of birth.\n    PLACE_OF_BIRTH:\
+        \ Subject's place of birth.\n    SEX: Subject's recorded sex.\n    CITIZENSHIP: Subject's\
+        \ citizenship.\n    MARITAL_STATUS: Subject's marital status.\n    UPDATED_TS: Timestamp\
+        \ of the last update to the row.\n    RECORD_VERSION: Version number of the row."
+    SubjectIdentityListResponse:
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/SubjectIdentity'
+          type: array
+          title: Items
+        total:
+          type: integer
+          title: Total
+      type: object
+      required:
+      - items
+      - total
+      title: SubjectIdentityListResponse
+      description: "Result set returned by a subject identity search.\n\nAttributes:\n   \
+        \ items: Matching subject identity rows.\n    total: Number of rows in ``items``."
+    SubjectIdentitySearch:
+      properties:
+        ssn:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Ssn
+          examples:
+          - '976782971'
+        first_name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: First Name
+          examples:
+          - Kevin
+        last_name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Last Name
+          examples:
+          - Jackson
+        date_of_birth:
+          anyOf:
+          - type: string
+            format: date
+          - type: 'null'
+          title: Date Of Birth
+          examples:
+          - '1969-02-10'
+        limit:
+          type: integer
+          maximum: 200.0
+          minimum: 1.0
+          title: Limit
+          default: 50
+      type: object
+      title: SubjectIdentitySearch
+      description: "Filters for a subject identity lookup.\n\nAll filters are optional individually,\
+        \ but at least one identity field must\nbe provided. Provided filters are combined\
+        \ with ``AND``. Input keys accept\nsnake_case or the table's column casing (for example\
+        \ ``ssn`` or ``SSN``).\n\nAttributes:\n    ssn: Social Security Number. Non-digit\
+        \ characters are ignored.\n    first_name: First name, matched case-insensitively.\n\
+        \    last_name: Last name, matched case-insensitively.\n    date_of_birth: Date of\
+        \ birth, matched on the calendar date.\n    limit: Maximum number of rows to return\
+        \ (1-200)."
+    ValidationError:
+      properties:
+        loc:
+          items:
+            anyOf:
+            - type: string
+            - type: integer
+          type: array
+          title: Location
+        msg:
+          type: string
+          title: Message
+        type:
+          type: string
+          title: Error Type
+        input:
+          title: Input
+        ctx:
+          type: object
+          title: Context
+      type: object
+      required:
+      - loc
+      - msg
+      - type
+      title: ValidationError
+  securitySchemes:
+    HTTPBearer:
+      type: http
+      description: Databricks user OAuth token. Locally paste the access_token from `databricks
+        auth token --profile govfood-dsca`. Do not include the word Bearer.
+      scheme: bearer
+tags:
+- name: system
+  description: Health and identity
+- name: subject-identity
+  description: Look up dcsa_catalog.edladmin.subject_identity via OBO SQL
+- name: fpvr-requests
+  description: Official FPVR request create and get
+- name: catalog
+  description: Exact request/response schemas and scenarios for configured reports

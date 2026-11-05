@@ -107,7 +107,7 @@ class CatalogScenario(BaseModel):
 
 
 class CatalogApi(BaseModel):
-    """One of the three FPVR HTTP APIs (plus token)."""
+    """One FPVR HTTP API (token, create, list, or get by id)."""
 
     id: str
     method: str

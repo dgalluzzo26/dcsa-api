@@ -25,7 +25,7 @@ router = APIRouter(
 )
 
 _ERROR_RESPONSES = {
-    422: {"model": ErrorResponse},
+    400: {"model": ErrorResponse},
     401: {"model": ErrorResponse},
     502: {"model": ErrorResponse},
     503: {"model": ErrorResponse},
@@ -88,7 +88,7 @@ def list_subject_identities(
         Matching subject identities.
 
     Raises:
-        HTTPException: 422 if no identity filter is provided, plus the errors
+        HTTPException: 400 if no identity filter is provided, plus the errors
             raised by ``_search``.
     """
     try:
@@ -101,7 +101,7 @@ def list_subject_identities(
         )
     except ValidationError as e:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            status_code=status.HTTP_400_BAD_REQUEST,
             detail="Provide at least one of ssn, first_name, last_name, date_of_birth",
         ) from e
     return _search(request, query)
@@ -122,7 +122,7 @@ def search_subject_identities(
     \f
     Args:
         request: Incoming request carrying the caller's access token.
-        body: Search filters. Validation (422) runs before this handler.
+        body: Search filters. Validation (400) runs before this handler.
 
     Returns:
         Matching subject identities.

@@ -100,8 +100,9 @@ def _render_help(catalog: ApiCatalog) -> str:
 
     parts.append("<h2>Report response schemas</h2>")
     parts.append(
-        "<p class='muted'>GET /api/v1/requests/{id} envelope (same as POST): "
+        "<p class='muted'>GET /api/v1/requests/fpvr-{n}/{id} envelope (same as POST): "
         "request_id, status, requested_at, requested_by, resolution_method, "
+        "source (internal or external, default external), "
         "report (null if not ready). report.code, report.title, report.subject, "
         "and report.data have no SSN.</p>"
     )
