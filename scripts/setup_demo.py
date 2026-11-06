@@ -79,7 +79,7 @@ CREATE TABLE IF NOT EXISTS {signal} (
 CREATE TABLE IF NOT EXISTS {log} (
   request_id STRING, report_code STRING, subject_ssn STRING, first_name STRING,
   last_name STRING, date_of_birth STRING, status STRING, requested_by STRING,
-  requested_at STRING, ready_at STRING, resolution_method STRING
+  requested_at STRING, ready_at STRING, resolution_method STRING, source STRING
 ) USING DELTA
 """,
         f"DELETE FROM {ident} WHERE SSN LIKE '99900%'",

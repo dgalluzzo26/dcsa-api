@@ -1,6 +1,7 @@
 """Official FPVR request HTTP routes."""
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.responses import JSONResponse
+from pydantic import ValidationError
 
 from app.core.candidates import CandidateTokenError
 from app.core.config import RequestStatusValue, get_settings
@@ -36,11 +37,27 @@ _RETRY_AFTER_SECONDS = "5"
 _ERROR_RESPONSES = {
     401: {"model": ErrorResponse},
     404: {"model": ErrorResponse},
+    400: {"model": ErrorResponse},
     409: {"model": AmbiguousSubjectResponse},
-    422: {"model": ErrorResponse},
     502: {"model": ErrorResponse},
     503: {"model": ErrorResponse},
 }
+
+_GET_ERROR_RESPONSES = {
+    401: {"model": ErrorResponse},
+    404: {"model": ErrorResponse},
+    502: {"model": ErrorResponse},
+    503: {"model": ErrorResponse},
+}
+
+_LIST_ERROR_RESPONSES = {
+    400: {"model": ErrorResponse},
+    401: {"model": ErrorResponse},
+    502: {"model": ErrorResponse},
+    503: {"model": ErrorResponse},
+}
+
+TypedMapper = Callable[[FPVRRequestAccepted], object]
 
 
 def _caller(request: Request) -> str | None:

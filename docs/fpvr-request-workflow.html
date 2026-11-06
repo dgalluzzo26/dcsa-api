@@ -133,28 +133,33 @@
   <h1>FPVR request API workflow</h1>
   <p class="lede">
     DCSA API on Databricks Apps. Callers authenticate with client id and secret,
-    open an official request for one FPVR report, poll until ready, then fetch
-    the payload. Request logging uses the app service principal; report data is
-    queried on-behalf-of the caller so Unity Catalog ABAC and RBAC apply.
+    then create and poll an official FPVR-1 Application Bundle request. Status
+    and report live on the same GET body. Request logging uses the app service
+    principal; report data is queried on-behalf-of the caller so Unity Catalog
+    ABAC and RBAC apply.
   </p>
 
   <div class="stats">
     <div class="stat"><div class="n">4</div><div class="l">Caller steps</div></div>
-    <div class="stat"><div class="n">3</div><div class="l">Public APIs</div></div>
+    <div class="stat"><div class="n">21</div><div class="l">FPVR HTTP APIs</div></div>
     <div class="stat"><div class="n">5</div><div class="l">Source tables</div></div>
-    <div class="stat"><div class="n">7</div><div class="l">FPVR reports in the mock</div></div>
+    <div class="stat"><div class="n">7</div><div class="l">Reports in config</div></div>
   </div>
 
   <div class="callout">
-    The mock covers all seven FPVR reports, including FPVR-6 Human Capital,
-    using the five edladmin streaming tables.
+    Each report has a typed set:
+    <span class="mono">POST /api/v1/requests/fpvr-{n}</span>,
+    <span class="mono">GET /api/v1/requests/fpvr-{n}</span>, and
+    <span class="mono">GET /api/v1/requests/fpvr-{n}/{id}</span>
+    for FPVR-1 through FPVR-7. Report code is implied by the path.
   </div>
 
   <h2>Caller flow</h2>
   <p class="muted">
-    Machine-to-machine. Token is OAuth2 client credentials, then three HTTP
-    calls. Entity resolution happens inside the request API, before an official
-    request id is issued.
+    Machine-to-machine. Token is OAuth2 client credentials, then POST and GET
+    by id. Entity resolution happens inside POST, before an official request id
+    is issued. GET by id returns the same envelope; <span class="mono">report</span>
+    is set when status is ready. GET without an id lists that report's requests.
   </p>
   <table>
     <thead>
@@ -169,21 +174,21 @@
       </tr>
       <tr>
         <td>2. Request</td>
-        <td class="mono">POST /api/v1/requests</td>
-        <td>200 + request_id (unique subject)</td>
-        <td>409 candidates without SSN, or 404 none</td>
+        <td class="mono">POST /api/v1/requests/fpvr-{n}</td>
+        <td>201 + request_id (unique subject)</td>
+        <td>400 invalid body, 409 candidates without SSN, or 404 none</td>
       </tr>
       <tr>
-        <td>3. Status</td>
-        <td class="mono">GET /api/v1/requests/{id}</td>
-        <td>pending | ready | failed</td>
-        <td>403/404 if not the caller’s request</td>
+        <td>3. Get</td>
+        <td class="mono">GET /api/v1/requests/fpvr-{n}/{id}</td>
+        <td>pending | ready | failed; report when ready</td>
+        <td>404 if unknown or logged for another report</td>
       </tr>
       <tr>
-        <td>4. Response</td>
-        <td class="mono">GET /api/v1/requests/{id}/response</td>
-        <td>Report JSON (OBO query)</td>
-        <td>409 if not ready; empty/denied if ABAC hides rows</td>
+        <td>4. List</td>
+        <td class="mono">GET /api/v1/requests/fpvr-{n}?status=&amp;source=&amp;requested_by=&amp;requested_at_after=&amp;requested_at_before=&amp;resolution_method=&amp;limit=</td>
+        <td>items + total for that report; report is null</td>
+        <td>400 if requested_at range is inverted</td>
       </tr>
     </tbody>
   </table>
@@ -200,7 +205,7 @@
     </div>
     <div class="card">
       <div class="card-h">Official request <span class="pill ok">1 match</span></div>
-      <p>HTTP 200. App SP inserts a request row, generates request_id, stores report code, caller identity, timestamps. Status starts pending or ready depending on whether the report is in-lake.</p>
+      <p>HTTP 201. App SP inserts a request row, generates request_id, stores report code, caller identity, source (default external), timestamps. Status starts pending or ready. <span class="mono">report</span> is included when ready.</p>
     </div>
   </div>
 
@@ -231,6 +236,7 @@
       <tr><td class="mono">requested_at</td><td>Official request time</td></tr>
       <tr><td class="mono">ready_at</td><td>When payload became servable</td></tr>
       <tr><td class="mono">resolution_method</td><td>unique_match | candidate_id</td></tr>
+      <tr><td class="mono">source</td><td>internal | external (default external)</td></tr>
     </tbody>
   </table>
 
@@ -254,26 +260,29 @@
     subject_status, subject_check, subject_activity, subject_signal.
   </p>
 
-  <h2>Proposed modules</h2>
+  <h2>Code layout</h2>
   <div class="grid-3">
     <div class="card">
       <h3>models</h3>
-      <p>RequestCreate, Candidate, RequestAccepted, RequestStatus, Report payload schemas per FPVR code.</p>
+      <p>Per-report FPVRnRequestCreate / FPVRnRequestAccepted / FPVRnReport with the sections for that code. Envelope fields include status, requested_by, resolution_method, and source (internal | external, default external).</p>
     </div>
     <div class="card">
       <h3>services</h3>
-      <p>EntityResolutionService (OBO identity lookup), RequestLogService (App SP), ReportAssemblerService (OBO).</p>
+      <p>FPVRRequestService (resolve + assemble), RequestLogService (App SP insert/update), SubjectIdentityService (OBO lookup), ReportAssembler (OBO SELECT).</p>
     </div>
     <div class="card">
       <h3>routes</h3>
-      <p>POST /requests, GET /requests/{id}, GET /requests/{id}/response. Keep existing /health and /me. Token from workspace POST /oidc/v1/token, not this app.</p>
+      <p class="mono">POST /api/v1/requests/fpvr-{1..7}</p>
+      <p class="mono">GET /api/v1/requests/fpvr-{1..7}</p>
+      <p class="mono">GET /api/v1/requests/fpvr-{1..7}/{id}</p>
+      <p>Also /api/health, /api/me, /api/v1/catalog, /api/v1/subject-identities. Token from workspace POST /oidc/v1/token, not this app.</p>
     </div>
   </div>
 
   <div class="callout warn">
-    Pending reports in this mock can flip to ready on a status poll by re-checking
-    the lake (no external fetch yet). That keeps the poll contract without a job
-    queue. A later worker can update status asynchronously using the same request_id.
+    Pending requests can flip to ready on GET by re-checking the lake
+    (no job queue yet). Invalid or incomplete bodies return 400, not 422.
+    A later worker can still update status asynchronously using the same request_id.
   </div>
 
   <div class="footer">
