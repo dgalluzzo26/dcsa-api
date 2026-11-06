@@ -2,28 +2,40 @@
 
 from __future__ import annotations
 
+from datetime import date, datetime
 from uuid import uuid4
 
 from app.core.candidates import CandidateTokenError, sign_candidate_id, ssn_from_candidate_id
-from app.core.config import get_settings
+from app.core.config import RequestStatusValue, get_settings
 from app.core.jobs import JobKickoffError, run_job_now
 from app.models.fpvr import (
     AmbiguousSubjectResponse,
     FPVRReportResponse,
     FPVRRequestAccepted,
     FPVRRequestCreate,
-    FPVRRequestListQuery,
-    FPVRRequestListResponse,
-    REPORT_TITLES,
-    ReportCode,
-    RequestSource,
-    RequestStatusValue,
     SubjectCandidate,
 )
 from app.models.subject_identity import SubjectIdentity, SubjectIdentitySearch
 from app.services.reports import ReportQueryError, get_report_assembler
 from app.services.request_log import RequestLogError, get_request_log_service, utc_now_iso
 from app.services.subject_identity import SubjectIdentityQueryError, get_subject_identity_service
+
+
+def _identity_field(subject: SubjectIdentity, field: str):
+    """Read a canonical identity field from a generated row model."""
+    return get_settings().identity_value(subject, field)
+
+
+def _date_of_birth_iso(value) -> str | None:
+    """Normalize a generated date-of-birth value to an ISO calendar date."""
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return value.date().isoformat()
+    if isinstance(value, date):
+        return value.isoformat()
+    text = str(value).strip()
+    return text[:10] if text else None
 
 
 class SubjectNotFoundError(LookupError):
@@ -58,13 +70,15 @@ class FPVRRequestService:
         self,
         body: FPVRRequestCreate,
         *,
+        report_code: str,
         user_token: str,
         requested_by: str | None,
     ) -> FPVRRequestAccepted:
         """Resolve the subject and log an official request if unique.
 
         Args:
-            body: Report code plus identity filters or candidate_id.
+            body: Identity filters or candidate_id.
+            report_code: Report implied by the request path.
             user_token: Caller token for OBO identity and report SQL.
             requested_by: Caller identity stored on the log row.
 
@@ -81,20 +95,21 @@ class FPVRRequestService:
         """
         subject, method = self._resolve(body, user_token=user_token)
         status, payload = get_report_assembler().assemble(
-            body.report_code, subject, user_token=user_token
+            report_code, subject, user_token=user_token
         )
         now = utc_now_iso()
         request_id = str(uuid4())
-        dob = None
-        if subject.DATE_OF_BIRTH is not None:
-            dob = subject.DATE_OF_BIRTH.date().isoformat()
+        dob = _date_of_birth_iso(_identity_field(subject, "date_of_birth"))
+        subject_ssn = str(_identity_field(subject, "ssn") or "")
+        first_name = _identity_field(subject, "first_name")
+        last_name = _identity_field(subject, "last_name")
         log = get_request_log_service()
         log.insert(
             request_id=request_id,
-            report_code=body.report_code,
-            subject_ssn=subject.SSN,
-            first_name=subject.FIRST_NAME,
-            last_name=subject.LAST_NAME,
+            report_code=report_code,
+            subject_ssn=subject_ssn,
+            first_name=first_name,
+            last_name=last_name,
             date_of_birth=dob,
             status=status,
             requested_by=requested_by,
@@ -106,16 +121,16 @@ class FPVRRequestService:
         if status == RequestStatusValue.pending:
             self._kickoff_pending_job(
                 request_id,
-                report_code=body.report_code,
-                subject_ssn=subject.SSN,
-                subject_first_name=subject.FIRST_NAME,
-                subject_last_name=subject.LAST_NAME,
+                report_code=report_code,
+                subject_ssn=subject_ssn,
+                subject_first_name=first_name,
+                subject_last_name=last_name,
                 subject_date_of_birth=dob,
                 user_token=user_token,
             )
         report = None
         if status == RequestStatusValue.ready:
-            report = self._report(body.report_code, payload)
+            report = self._report(report_code, payload)
         return FPVRRequestAccepted(
             request_id=request_id,
             status=status,
@@ -222,7 +237,7 @@ class FPVRRequestService:
 
     def _report(
         self,
-        report_code: ReportCode,
+        report_code: str,
         payload: dict,
     ) -> FPVRReportResponse:
         """Build the nested report object from an assembler payload.
@@ -236,7 +251,7 @@ class FPVRRequestService:
         """
         return FPVRReportResponse(
             code=report_code,
-            title=REPORT_TITLES[report_code],
+            title=get_settings().report_title(report_code),
             subject=payload["subject"],
             data=payload["sections"],
         )
@@ -277,14 +292,14 @@ class FPVRRequestService:
         if result.total > 1:
             candidates = [
                 SubjectCandidate(
-                    candidate_id=sign_candidate_id(item.SSN),
-                    FIRST_NAME=item.FIRST_NAME,
-                    LAST_NAME=item.LAST_NAME,
-                    DATE_OF_BIRTH=item.DATE_OF_BIRTH,
-                    PLACE_OF_BIRTH=item.PLACE_OF_BIRTH,
-                    SEX=item.SEX,
-                    CITIZENSHIP=item.CITIZENSHIP,
-                    MARITAL_STATUS=item.MARITAL_STATUS,
+                    candidate_id=sign_candidate_id(str(_identity_field(item, "ssn") or "")),
+                    first_name=_identity_field(item, "first_name") or "",
+                    last_name=_identity_field(item, "last_name") or "",
+                    date_of_birth=_identity_field(item, "date_of_birth"),
+                    place_of_birth=getattr(item, "place_of_birth", None),
+                    sex=getattr(item, "sex", None),
+                    citizenship=getattr(item, "citizenship", None),
+                    marital_status=getattr(item, "marital_status", None),
                 )
                 for item in result.items
             ]

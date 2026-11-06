@@ -4,9 +4,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from app.core.config import ReportConfig, get_settings
+from app.core.config import ReportConfig, get_settings, RequestStatusValue
 from app.core.sql import SqlStatementError, WarehouseNotConfiguredError, execute_obo_statement
-from app.models.fpvr import RequestStatusValue
 from app.models.subject_identity import SubjectIdentity
 
 
@@ -40,13 +39,14 @@ class ReportAssembler:
         """
         report = self._settings.reports[report_code]
         data: dict[str, Any] = {}
+        ssn = str(self._settings.identity_value(subject, "ssn") or "")
         for section_name, section in report.sections.items():
-            data[section_name] = self._query(section.source, subject.SSN, user_token=user_token)
-            
+            data[section_name] = self._query(section.source, ssn, user_token=user_token)
 
         ready = self._is_ready(report, data)
-        public_subject = subject.model_dump()
-        public_subject.pop("SSN", None)
+        public_subject = subject.model_dump(
+            exclude=self._settings.omitted_fields("identity")
+        )
         payload = {
             "report_code": report_code,
             "report_title": report.name,
@@ -73,6 +73,8 @@ class ReportAssembler:
             return bool(data.get(readiness.section))
         if readiness.mode == "any_section_non_empty":
             return any(data.get(name) for name in (readiness.sections or []))
+        if readiness.mode == "all_sections_non_empty":
+            return all(data.get(name) for name in (readiness.sections or []))
         for row in data.get(readiness.section) or []:
             value = row.get(readiness.field)
             if value is not None and value != "":
@@ -95,7 +97,7 @@ class ReportAssembler:
         """
         source = self._settings.sources[source_name]
         table = self._settings.source_table(source_name)
-        columns = list(source.columns)
+        columns = self._settings.source_columns(source_name)
         sql = (
             f"SELECT {', '.join(columns)} FROM {table} "
             f"WHERE {source.filter.column} = :{source.filter.parameter}"
@@ -106,11 +108,10 @@ class ReportAssembler:
             )
         except (WarehouseNotConfiguredError, SqlStatementError) as exc:
             raise ReportQueryError(str(exc)) from exc
-        omit = set(source.omit_from_output)
         out: list[dict[str, Any]] = []
         for row in rows:
-            item = {col: row[i] for i, col in enumerate(columns) if col not in omit}
-            out.append(item)
+            uc_row = {col: row[i] for i, col in enumerate(columns)}
+            out.append(self._settings.remap_row(source_name, uc_row))
         return out
 
 

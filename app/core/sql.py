@@ -6,9 +6,10 @@ import json
 import time
 from typing import Any
 from urllib.error import HTTPError, URLError
+from urllib.parse import quote
 from urllib.request import Request, urlopen
 
-from app.core.config import get_settings
+from app.core.config import SourceColumn, get_settings
 
 
 class WarehouseNotConfiguredError(RuntimeError):
@@ -109,6 +110,52 @@ def execute_statement(
             access_token=access_token,
         )
     raise SqlStatementError("SQL statement did not finish within 60 seconds")
+
+
+def describe_unity_catalog_table(
+    full_name: str, *, access_token: str, host: str
+) -> list[SourceColumn]:
+    """Return Unity Catalog columns for one table or view.
+
+    Args:
+        full_name: ``catalog.schema.table`` identifier.
+        access_token: Databricks access token.
+        host: Workspace base URL.
+
+    Returns:
+        Columns in Unity Catalog position order.
+
+    Raises:
+        SqlStatementError: If the tables API rejects the request or the
+            response has no columns.
+    """
+    encoded = quote(full_name, safe=".")
+    payload = _request_json(
+        f"{host.rstrip('/')}/api/2.1/unity-catalog/tables/{encoded}",
+        access_token=access_token,
+    )
+    raw_columns = payload.get("columns") or []
+    if not raw_columns:
+        raise SqlStatementError(f"Unity Catalog table {full_name!r} has no columns")
+    columns: list[SourceColumn] = []
+    for index, raw in enumerate(raw_columns):
+        name = str(raw.get("name") or "").strip()
+        if not name:
+            raise SqlStatementError(
+                f"Unity Catalog table {full_name!r} has a column with no name"
+            )
+        type_name = str(raw.get("type_name") or raw.get("type_text") or "STRING")
+        position = raw.get("position")
+        columns.append(
+            SourceColumn(
+                name=name,
+                type_name=type_name,
+                nullable=bool(raw.get("nullable", True)),
+                position=int(position) if position is not None else index,
+            )
+        )
+    columns.sort(key=lambda column: column.position)
+    return columns
 
 
 def workspace_host() -> str:

@@ -1,91 +1,13 @@
-"""Shared FPVR catalog schemas and optional known-section row models."""
+"""Shared FPVR catalog schemas. Source row models are generated at startup."""
 
 from __future__ import annotations
 
-from datetime import datetime
+from pydantic import BaseModel
 
-from pydantic import BaseModel, ConfigDict
+from app.models.sources.registry import ready_source_models
 
-
-class IdentitySectionRow(BaseModel):
-    """Public identity section row (SSN omitted)."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    FIRST_NAME: str
-    LAST_NAME: str
-    DATE_OF_BIRTH: datetime | None = None
-    PLACE_OF_BIRTH: str | None = None
-    SEX: str | None = None
-    CITIZENSHIP: str | None = None
-    MARITAL_STATUS: str | None = None
-    UPDATED_TS: str | None = None
-    RECORD_VERSION: str | None = None
-
-
-class StatusSectionRow(BaseModel):
-    """Public status section row (SSN omitted)."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    ORG_CODE: str | None = None
-    POSITION_TITLE: str | None = None
-    DUTY_LOCATION: str | None = None
-    RISK_TIER: str | None = None
-    ELIGIBILITY_LEVEL: str | None = None
-    STATUS_CODE: str | None = None
-    STATUS_EFFECTIVE_DATE: str | None = None
-    UPDATED_TS: str | None = None
-    RECORD_VERSION: str | None = None
-
-
-class CheckSectionRow(BaseModel):
-    """Public check section row (SSN omitted)."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    CHECK_ID: str | None = None
-    LOCATION_CODE: str | None = None
-    CHECK_TYPE: str | None = None
-    RESULT_CODE: str | None = None
-    RESULT_SCORE: str | None = None
-    CHECKED_TS: str | None = None
-    LOAD_SEQ: str | None = None
-
-
-class ActivitySectionRow(BaseModel):
-    """Public activity section row (SSN omitted)."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    ACTIVITY_ID: str | None = None
-    LOCATION_CODE: str | None = None
-    ACTIVITY_TYPE: str | None = None
-    DETAIL: str | None = None
-    EVENT_TS: str | None = None
-    LOAD_SEQ: str | None = None
-
-
-class SignalSectionRow(BaseModel):
-    """Public signal section row (SSN omitted)."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    SIGNAL_ID: str | None = None
-    LOCATION_CODE: str | None = None
-    SIGNAL_TYPE: str | None = None
-    SEVERITY: str | None = None
-    SIGNAL_TS: str | None = None
-    LOAD_SEQ: str | None = None
-
-
-SECTION_ROW_MODELS: dict[str, type[BaseModel]] = {
-    "identity": IdentitySectionRow,
-    "status": StatusSectionRow,
-    "check": CheckSectionRow,
-    "activity": ActivitySectionRow,
-    "signal": SignalSectionRow,
-}
+SECTION_ROW_MODELS: dict[str, type[BaseModel]] = ready_source_models()
+IdentitySectionRow = SECTION_ROW_MODELS["identity"]
 
 
 class CatalogField(BaseModel):

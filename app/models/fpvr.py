@@ -8,27 +8,9 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from app.core.config import ReportCode
 
-class ReportCode(str, Enum):
-    """FPVR contract report requested by the caller."""
 
-    FPVR_1 = "FPVR-1"
-    FPVR_2 = "FPVR-2"
-    FPVR_3 = "FPVR-3"
-    FPVR_4 = "FPVR-4"
-    FPVR_5 = "FPVR-5"
-    FPVR_6 = "FPVR-6"
-    FPVR_7 = "FPVR-7"
-
-REPORT_TITLES: dict[ReportCode, str] = {
-    ReportCode.FPVR_1: "Application Bundle",
-    ReportCode.FPVR_2: "Investigation Summary",
-    ReportCode.FPVR_3: "Adjudication Summary",
-    ReportCode.FPVR_4: "CV Summary",
-    ReportCode.FPVR_5: "CV Alerts",
-    ReportCode.FPVR_6: "Human Capital",
-    ReportCode.FPVR_7: "Favorable to Onboard",
-}
 class RequestStatusValue(str, Enum):
     """Lifecycle of an official FPVR request."""
 
@@ -105,11 +87,12 @@ class FPVRSubjectCreate(BaseModel):
 class FPVRRequestCreate(BaseModel):
     """Body for opening an official FPVR request.
 
-    Resolve a subject with SSN, or with first name + last name + date of birth
-    (SSN optional). If multiple people match, resubmit with ``candidate_id``.
+    Report code is implied by the route. Resolve a subject with SSN, or with
+    first name + last name + date of birth (SSN optional). If multiple people
+    match, resubmit with ``candidate_id``. Extra keys such as ``report_code``
+    are ignored.
 
     Attributes:
-        report_code: Which configured report to produce.
         ssn: Optional Social Security Number.
         first_name: Optional first name.
         last_name: Optional last name.
@@ -119,7 +102,6 @@ class FPVRRequestCreate(BaseModel):
 
     model_config = ConfigDict(populate_by_name=True)
 
-    report_code: str = Field(min_length=1, examples=["FPVR-6"])
     ssn: str | None = None
     first_name: str | None = None
     last_name: str | None = None
@@ -141,7 +123,6 @@ class FPVRRequestCreate(BaseModel):
             return value
         normalized = dict(value)
         aliases = {
-            "report_code": ("reportCode", "REPORT_CODE"),
             "ssn": ("SSN",),
             "first_name": ("FIRST_NAME", "First_Name"),
             "last_name": ("LAST_NAME", "Last_Name"),
@@ -156,19 +137,15 @@ class FPVRRequestCreate(BaseModel):
         return normalized
 
     @model_validator(mode="after")
-    def require_identity_and_report(self) -> "FPVRRequestCreate":
-        """Require a known report code plus identity fields or a candidate id.
+    def require_identity(self) -> "FPVRRequestCreate":
+        """Require a candidate id or at least one identity field.
 
         Returns:
             The validated model.
 
         Raises:
-            ValueError: If the report is unknown or identity is missing.
+            ValueError: If neither a candidate nor identity fields are present.
         """
-        from app.core.config import get_settings
-
-        if self.report_code not in get_settings().reports:
-            raise ValueError(f"Unknown report_code: {self.report_code}")
         if self.candidate_id:
             return self
         if any((self.ssn, self.first_name, self.last_name, self.date_of_birth)):
@@ -310,4 +287,41 @@ class FPVRRequestListResponse(BaseModel):
     """
 
     items: list[FPVRRequestAccepted]
+    total: int
+
+class SubjectCandidate(BaseModel):
+    """A possible subject match without SSN.
+
+    Attributes:
+        candidate_id: Opaque token to resubmit on POST /requests.
+        first_name: First name.
+        last_name: Last name.
+        date_of_birth: Date of birth.
+        place_of_birth: Place of birth.
+        sex: Recorded sex.
+        citizenship: Citizenship.
+        marital_status: Marital status.
+    """
+
+    candidate_id: str
+    first_name: str
+    last_name: str
+    date_of_birth: date | datetime | None = None
+    place_of_birth: str | None = None
+    sex: str | None = None
+    citizenship: str | None = None
+    marital_status: str | None = None
+
+
+class AmbiguousSubjectResponse(BaseModel):
+    """Returned when identity filters match more than one person.
+
+    Attributes:
+        detail: Human-readable explanation.
+        candidates: Matches without SSN.
+        total: Number of candidates returned.
+    """
+
+    detail: str = "Multiple subjects matched; provide more information or candidate_id"
+    candidates: list[SubjectCandidate]
     total: int
