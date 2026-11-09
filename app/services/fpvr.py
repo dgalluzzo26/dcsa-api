@@ -373,9 +373,11 @@ class FPVRRequestService:
                 user_token=user_token,
             )
         except JobKickoffError as exc:
-            log.update_status(request_id, RequestStatusValue.failed)
+            log.update_status(
+                request_id, RequestStatusValue.failed, user_token=user_token
+            )
             raise ReportQueryError(str(exc)) from exc
-        log.set_job_run_id(request_id, run_id)
+        log.set_job_run_id(request_id, run_id, user_token=user_token)
 
 
 def _source_from_row(row: dict[str, str]) -> RequestSource:
