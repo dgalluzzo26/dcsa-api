@@ -7,7 +7,6 @@ from typing import Any
 from app import __version__
 from app.core.config import ReportConfig, get_settings
 from app.core.sql import WarehouseNotConfiguredError, workspace_host
-from app.models.fpvr import REPORT_TITLES, ReportCode
 from app.models.report_contract import (
     ApiCatalog,
     CatalogApi,
@@ -102,7 +101,10 @@ def _public_columns(source_name: str) -> list[str]:
 
 
 def _sample_row(source_name: str) -> dict[str, Any]:
-    """Return an example row for a source, synthesizing unknowns.
+    """Return an example public row for one source, keyed by API field name.
+
+    Sample values are looked up by Unity Catalog column. Columns without a
+    sample value get a placeholder. Omitted fields are skipped.
 
     Args:
         source_name: YAML source key.
@@ -110,35 +112,12 @@ def _sample_row(source_name: str) -> dict[str, Any]:
     Returns:
         Example JSON object for one section row.
     """
-    public = _public_columns(source_name)
     known = _SAMPLE_ROWS.get(source_name) or {}
-    row: dict[str, Any] = {}
-    for name in public:
-        if name in known:
-            row[name] = known[name]
-        else:
-            row[name] = f"example-{name.lower()}"
-    return row
-
-
-def _sample_row(source_name: str) -> dict[str, Any]:
-    """Return an example row for a source, synthesizing unknowns.
-
-    Args:
-        source_name: YAML source key.
-
-    Returns:
-        Example JSON object for one section row.
-    """
-    public = _public_columns(source_name)
-    known = _SAMPLE_ROWS.get(source_name) or {}
-    row: dict[str, Any] = {}
-    for name in public:
-        if name in known:
-            row[name] = known[name]
-        else:
-            row[name] = f"example-{name.lower()}"
-    return row
+    return {
+        field.api_name: known.get(field.column, f"example-{field.column.lower()}")
+        for field in get_settings().effective_fields[source_name]
+        if not field.omit
+    }
 
 
 def _fields_for_source(source_name: str) -> list[CatalogField]:
@@ -174,45 +153,6 @@ def _fields_for_source(source_name: str) -> list[CatalogField]:
 
 
 def _readiness_summary(report: ReportConfig) -> str:
-    """Turn a YAML readiness rule into catalog prose.
-
-    Args:
-        report: Configured report.
-
-    Returns:
-        Human-readable readiness description.
-    """
-    readiness = report.readiness
-    if readiness.mode == "always":
-        return (
-            "Ready when identity is resolved. Configured sections may be empty "
-            "arrays if ABAC hides rows."
-        )
-    if readiness.mode == "section_non_empty":
-        return f"Ready when at least one {readiness.section} row exists."
-    if readiness.mode == "any_section_non_empty":
-        names = " or ".join(readiness.sections or [])
-        return f"Pending until at least one {names} row exists."
-    return (
-        f"Ready when {readiness.field} is present on a {readiness.section} row."
-    )
-
-
-def _example_envelope(code: ReportCode | str) -> dict[str, Any]:
-def _sample_row(source_name: str) -> dict[str, Any]:
-    """Return a sample public row for one source.
-
-    Args:
-        source_name: YAML source key.
-
-    Returns:
-        Example JSON object using API field names.
-    """
-    sample = _SAMPLE_ROWS.get(source_name, {})
-    return {name: sample.get(name) for name in _public_columns(source_name)}
-
-
-def _readiness_summary(report: ReportConfig) -> str:
     """Describe YAML readiness as a short catalog string.
 
     Args:
@@ -236,24 +176,22 @@ def _readiness_summary(report: ReportConfig) -> str:
 
 
 def _example_envelope(code: str) -> dict[str, Any]:
-    """Build a sample nested report body for one FPVR code.
+    """Build a sample nested report body for one configured report.
 
     Args:
-        code: YAML report key or ``ReportCode``.
+        code: YAML report key, for example ``FPVR-Application-Bundle``.
 
     Returns:
         Example JSON matching ``FPVRReportResponse``.
     """
-    report_code = code if isinstance(code, ReportCode) else ReportCode(code)
-    settings = get_settings()
-    report = settings.reports[code.value]
+    report = get_settings().reports[code]
     data = {
         section_name: [_sample_row(section.source)]
         for section_name, section in report.sections.items()
     }
     return {
-        "code": report_code,
-        "title": REPORT_TITLES[settings.report_code],
+        "code": code,
+        "title": report.name,
         "subject": _sample_row("identity"),
         "data": data,
     }
@@ -348,9 +286,9 @@ def build_catalog() -> ApiCatalog:
         ),
     ]
 
-    for code in ReportCode:
-        slug = code.value.lower()
-        title = REPORT_TITLES[code]
+    for code, report in settings.reports.items():
+        slug = code
+        title = report.name
         accepted = {
             "request_id": _SAMPLE_REQUEST_ID,
             "status": "ready",
@@ -362,12 +300,12 @@ def build_catalog() -> ApiCatalog:
         }
         apis.append(
             CatalogApi(
-                id=f"request-{slug}",
+                id=f"request-{slug.lower()}",
                 method="POST",
                 path=f"/api/v1/requests/{slug}",
                 auth="Bearer (workspace OIDC token)",
                 summary=(
-                    f"Resolve a subject and open one official {code.value} {title} "
+                    f"Resolve a subject and open one official {code} {title} "
                     "request. SSN is optional when first_name + last_name + "
                     "date_of_birth is unique."
                 ),
@@ -446,12 +384,12 @@ def build_catalog() -> ApiCatalog:
         )
         apis.append(
             CatalogApi(
-                id=f"list-{slug}",
+                id=f"list-{slug.lower()}",
                 method="GET",
                 path=f"/api/v1/requests/{slug}",
                 auth="Bearer (workspace OIDC token)",
                 summary=(
-                    f"List official {code.value} {title} requests. Optional filters: "
+                    f"List official {code} {title} requests. Optional filters: "
                     "status, requested_by, requested_at_after, requested_at_before, "
                     "resolution_method, source, limit. Nested report is not assembled."
                 ),
@@ -479,7 +417,7 @@ def build_catalog() -> ApiCatalog:
         )
         apis.append(
             CatalogApi(
-                id=f"get-{slug}",
+                id=f"get-{slug.lower()}",
                 method="GET",
                 path=f"/api/v1/requests/{slug}/{{request_id}}",
                 auth="Bearer (OBO SQL; ABAC/RBAC applied when assembling report)",

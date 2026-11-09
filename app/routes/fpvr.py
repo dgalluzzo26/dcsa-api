@@ -57,9 +57,6 @@ _LIST_ERROR_RESPONSES = {
     503: {"model": ErrorResponse},
 }
 
-TypedMapper = Callable[[FPVRRequestAccepted], object]
-
-
 def _caller(request: Request) -> str | None:
     """Best available caller identifier for the request log.
 
