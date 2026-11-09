@@ -79,6 +79,8 @@ reports:
       sections:
         - check
         - activity
+    on_pending:
+      job: mock_async_job
 
   FPVR-CV-Summary:
     name: CV Summary
@@ -98,5 +100,9 @@ reports:
       check:
         source: check
     readiness:
-      mode: section_non_empty
-      section: status
+      mode: all_sections_non_empty
+      sections:
+        - status
+        - check
+    on_pending:
+      job: mock_async_job

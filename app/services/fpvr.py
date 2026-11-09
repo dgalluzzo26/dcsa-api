@@ -13,6 +13,7 @@ from app.models.fpvr import (
     FPVRReportResponse,
     FPVRRequestAccepted,
     FPVRRequestCreate,
+    RequestSource,
     SubjectCandidate,
 )
 from app.models.subject_identity import SubjectIdentity, SubjectIdentitySearch
@@ -192,7 +193,7 @@ class FPVRRequestService:
             requested_at=row["requested_at"],
             requested_by=row["requested_by"] or None,
             resolution_method=row["resolution_method"] or "",
-            source=_source_from_row(row),
+            request_source=_source_from_row(row),
             report=report,
         )
 
@@ -228,7 +229,7 @@ class FPVRRequestService:
                 requested_at=row["requested_at"],
                 requested_by=row["requested_by"] or None,
                 resolution_method=row["resolution_method"] or "",
-                source=_source_from_row(row),
+                request_source=_source_from_row(row),
                 report=None,
             )
             for row in rows

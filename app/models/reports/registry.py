@@ -8,7 +8,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, create_model
 
 from app.core.config import get_settings
-from app.models.fpvr import RequestStatusValue
+from app.models.fpvr import RequestStatusValue, RequestSource
 from app.models.sources.registry import ready_source_models
 
 
@@ -73,6 +73,7 @@ def _build_request_accepted(report_code: str) -> type[BaseModel]:
         __config__=ConfigDict(extra="forbid"),
         request_id=(str, ...),
         status=(RequestStatusValue, ...),
+        request_source=(RequestSource, ...),
         requested_at=(str, ...),
         requested_by=(str | None, None),
         resolution_method=(str, ...),

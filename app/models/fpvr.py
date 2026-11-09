@@ -231,7 +231,7 @@ class FPVRRequestAccepted(BaseModel):
     requested_at: str
     requested_by: str | None = None
     resolution_method: str
-    source: RequestSource = RequestSource.external
+    request_source: RequestSource = RequestSource.external
     report: FPVRReportResponse | None = None
 
 
