@@ -1,4 +1,5 @@
-# Live application configuration. The settings loader validates this file at startup.
+# Live SQL/catalog settings. API field names are in mapping.yml.
+# Source columns and types are discovered from Unity Catalog at startup.
 
 version: 1
 
@@ -12,116 +13,37 @@ databricks:
   default_catalog_schema: dcsa_catalog.edladmin
   request_log_table: dcsa_catalog.dcsa_api.api_request_log
 
-# Sources are reusable across reports. A table may be an unqualified name,
-# schema.table, or catalog.schema.table. Optional catalog and schema fields
-# override the matching parts of databricks.default_catalog_schema. Do not
-# set catalog or schema together with a three-part table name, and do not
-# set schema together with a two-part table name. Every identifier
-# (including columns) must be validated against a strict allowlist before
-# being placed in SQL.
 sources:
   identity:
     table: subject_identity
     filter:
       column: SSN
       parameter: subject_ssn
-    columns:
-      - SSN
-      - FIRST_NAME
-      - LAST_NAME
-      - DATE_OF_BIRTH
-      - PLACE_OF_BIRTH
-      - SEX
-      - CITIZENSHIP
-      - MARITAL_STATUS
-      - UPDATED_TS
-      - RECORD_VERSION
-    omit_from_output:
-      - SSN
 
   status:
     table: subject_status
     filter:
       column: SSN
       parameter: subject_ssn
-    columns:
-      - SSN
-      - ORG_CODE
-      - POSITION_TITLE
-      - DUTY_LOCATION
-      - RISK_TIER
-      - ELIGIBILITY_LEVEL
-      - STATUS_CODE
-      - STATUS_EFFECTIVE_DATE
-      - UPDATED_TS
-      - RECORD_VERSION
-    omit_from_output:
-      - SSN
 
   check:
     table: subject_check
     filter:
       column: SSN
       parameter: subject_ssn
-    columns:
-      - CHECK_ID
-      - SSN
-      - LOCATION_CODE
-      - CHECK_TYPE
-      - RESULT_CODE
-      - RESULT_SCORE
-      - CHECKED_TS
-      - LOAD_SEQ
-    omit_from_output:
-      - SSN
 
   activity:
     table: subject_activity
     filter:
       column: SSN
       parameter: subject_ssn
-    columns:
-      - ACTIVITY_ID
-      - SSN
-      - LOCATION_CODE
-      - ACTIVITY_TYPE
-      - DETAIL
-      - EVENT_TS
-      - LOAD_SEQ
-    omit_from_output:
-      - SSN
 
   signal:
     table: subject_signal
     filter:
       column: SSN
       parameter: subject_ssn
-    columns:
-      - SIGNAL_ID
-      - SSN
-      - LOCATION_CODE
-      - SIGNAL_TYPE
-      - SEVERITY
-      - SIGNAL_TS
-      - LOAD_SEQ
-    omit_from_output:
-      - SSN
-  
-  awards:
-    schema: ryan_mock
-    table: usa_spending_mock_awards
-    filter:
-      column: contract_award_unique_key
-      parameter: subject_ssn
-    columns:
-      - contract_award_unique_key
-      - award_id_piid
-      - total_obligated_amount
-# Jobs are reusable Databricks Jobs API targets. Reports may reference one
-# via on_pending. Parameter values are literals or {{request_id}},
-# {{report_code}}, {{subject_ssn}}, {{subject_first_name}},
-# {{subject_last_name}}, or {{subject_date_of_birth}}. Quote placeholders.
-# Replace job_id with a workspace job the app service principal can run.
+
 jobs:
   mock_async_job:
     job_id: 141195585457411
@@ -132,11 +54,8 @@ jobs:
       subject_last_name: "{{subject_last_name}}"
       subject_date_of_birth: "{{subject_date_of_birth}}"
 
-
-# Report sections become keys in the response data object. Readiness uses a
-# small, validated vocabulary rather than executable expressions or raw SQL.
 reports:
-  FPVR-1:
+  FPVR-Application-Bundle:
     name: Application Bundle
     sections:
       identity:
@@ -148,7 +67,7 @@ reports:
     readiness:
       mode: always
 
-  FPVR-2:
+  FPVR-Investigation-Summary:
     name: Investigation Summary
     sections:
       check:
@@ -160,19 +79,10 @@ reports:
       sections:
         - check
         - activity
+    on_pending:
+      job: mock_async_job
 
-  FPVR-3:
-    name: Adjudication Summary
-    sections:
-      status:
-        source: status
-      check:
-        source: check
-    readiness:
-      mode: section_non_empty
-      section: status
-
-  FPVR-4:
+  FPVR-CV-Summary:
     name: CV Summary
     sections:
       identity:
@@ -182,83 +92,17 @@ reports:
     readiness:
       mode: always
 
-  FPVR-5:
-    name: CV Alerts
-    sections:
-      signal:
-        source: signal
-    readiness:
-      mode: always
-
-  FPVR-6:
-    name: Human Capital
-    sections:
-      identity:
-        source: identity
-      status:
-        source: status
-    readiness:
-      mode: always
-
-  FPVR-7:
-    name: Favorable to Onboard
+  FPVR-Adjudication-Summary:
+    name: Adjudication Summary
     sections:
       status:
         source: status
-    readiness:
-      mode: field_present
-      section: status
-      field: STATUS_CODE
-  
-  Awards:
-    name: Awards
-    sections:
-      awards:
-        source: awards
       check:
         source: check
     readiness:
-      mode: any_section_non_empty
+      mode: all_sections_non_empty
       sections:
-        - awards
+        - status
         - check
     on_pending:
       job: mock_async_job
-    
-# New-report template (uncomment and customize):
-#
-#  sources:
-#    training:
-#      table: subject_training
-#      # catalog: other_catalog
-#      # schema: other_schema
-#      filter:
-#        column: SSN
-#        parameter: subject_ssn
-#      columns:
-#        - SSN
-#        - COURSE_NAME
-#        - COMPLETED_DATE
-#      omit_from_output:
-#        - SSN
-#
-#  reports:
-#    FPVR-8:
-#      name: Training History
-#      sections:
-#        training:
-#          source: training
-#      readiness:
-#        mode: section_non_empty
-#        section: training
-#      on_pending:
-#        job: enrich_investigation
-#
-# Future-loader guardrails:
-# - Validate this document against a versioned schema before serving requests.
-# - Require unique source names, report codes, job names, and section names.
-# - Reject unknown source references, columns, readiness modes, and job names.
-# - Allow only validated catalog/schema/table/column identifiers.
-# - Bind filter values as SQL parameters; never interpolate user values.
-# - Do not permit arbitrary SQL, joins, predicates, or expressions in YAML.
-# - Fail application startup on invalid configuration instead of skipping it.

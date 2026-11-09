@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
+from app.core.config import RequestStatusValue
 from app.models.fpvr import FPVRRequestListQuery, ReportCode, RequestSource, RequestStatusValue
 
 

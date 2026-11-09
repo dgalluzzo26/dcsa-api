@@ -6,15 +6,17 @@ import os
 import re
 from functools import lru_cache
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal, Annotated
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator, AfterValidator
+from enum import Enum
 
 _IDENT = re.compile(r"^[A-Za-z0-9_]+$")
 _SCHEMA = re.compile(r"^[A-Za-z0-9_]+\.[A-Za-z0-9_]+$")
 _REPORT_CODE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 _CONFIG_PATH = Path("config.yaml")
+_MAPPING_PATH = Path("mapping.yml")
 _JOB_PARAM_TOKEN = re.compile(r"^\{\{([a-z_]+)\}\}$")
 _ALLOWED_JOB_PARAM_TOKENS = frozenset(
     {
@@ -171,6 +173,75 @@ class FilterConfig(BaseModel):
         return _require_ident(value, kind="filter column")
 
 
+JsonFieldType = Literal["string", "integer", "number", "boolean", "date", "datetime"]
+_IDENTITY_SEARCH_FIELDS = ("ssn", "first_name", "last_name", "date_of_birth")
+
+
+class SourceColumn(BaseModel):
+    """One Unity Catalog column discovered at startup."""
+
+    name: str = Field(min_length=1)
+    type_name: str = Field(min_length=1)
+    nullable: bool = True
+    position: int = 0
+
+
+class EffectiveField(BaseModel):
+    """One source field after Unity Catalog discovery and mapping.yml overlay."""
+
+    api_name: str = Field(min_length=1)
+    column: str = Field(min_length=1)
+    omit: bool = False
+    json_type: JsonFieldType = "string"
+    nullable: bool = True
+
+
+class MappedFieldConfig(BaseModel):
+    """Optional overlay for one Unity Catalog column in the public API."""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    column: str | None = None
+    omit: bool = False
+    type: JsonFieldType | None = None
+    nullable: bool | None = None
+
+    @field_validator("column")
+    @classmethod
+    def column_is_identifier(cls, value: str | None) -> str | None:
+        """Require an explicit lake column to be a SQL identifier."""
+        if value is None:
+            return None
+        return _require_ident(value, kind="mapped column")
+
+
+class MappingYaml(BaseModel):
+    """Validated ``mapping.yml`` document."""
+
+    version: Literal[1]
+    sources: dict[str, dict[str, MappedFieldConfig]] = Field(default_factory=dict)
+
+    @field_validator("sources")
+    @classmethod
+    def names_are_identifiers(
+        cls, value: dict[str, dict[str, MappedFieldConfig]]
+    ) -> dict[str, dict[str, MappedFieldConfig]]:
+        """Require source and API field names to be safe identifiers."""
+        for source_name, fields in value.items():
+            _require_ident(source_name, kind="mapping source name")
+            seen_columns: set[str] = set()
+            for field_name, spec in fields.items():
+                _require_ident(field_name, kind="API field")
+                lake = spec.column or field_name
+                if lake in seen_columns:
+                    raise ValueError(
+                        f"Mapping source {source_name!r} maps column "
+                        f"{lake!r} more than once"
+                    )
+                seen_columns.add(lake)
+        return value
+
+
 class SourceConfig(BaseModel):
     """One reusable Unity Catalog table or view a report can query."""
 
@@ -180,8 +251,6 @@ class SourceConfig(BaseModel):
     catalog: str | None = None
     uc_schema: str | None = Field(default=None, alias="schema")
     filter: FilterConfig
-    columns: list[str] = Field(min_length=1)
-    omit_from_output: list[str] = Field(default_factory=list)
 
     @field_validator("catalog")
     @classmethod
@@ -198,25 +267,6 @@ class SourceConfig(BaseModel):
         if value is None:
             return None
         return _require_ident(value, kind="schema")
-
-    @field_validator("columns", "omit_from_output")
-    @classmethod
-    def names_are_identifiers(cls, values: list[str]) -> list[str]:
-        """Require every listed column name to be a SQL identifier."""
-        return [_require_ident(value, kind="column") for value in values]
-
-    @model_validator(mode="after")
-    def validate_column_lists(self) -> "SourceConfig":
-        """Require filter/omit columns to be selected."""
-        selected = set(self.columns)
-        if self.filter.column not in selected:
-            raise ValueError(
-                f"Filter column {self.filter.column!r} is not in source columns"
-            )
-        unknown = [name for name in self.omit_from_output if name not in selected]
-        if unknown:
-            raise ValueError(f"omit_from_output columns are not selected: {unknown}")
-        return self
 
 
 class ReportSectionConfig(BaseModel):
@@ -238,7 +288,13 @@ class ReadinessConfig(BaseModel):
 
     model_config = ConfigDict(str_strip_whitespace=True)
 
-    mode: Literal["always", "section_non_empty", "any_section_non_empty", "field_present"]
+    mode: Literal[
+        "always",
+        "section_non_empty",
+        "any_section_non_empty",
+        "all_sections_non_empty",
+        "field_present",
+    ]
     section: str | None = None
     sections: list[str] | None = None
     field: str | None = None
@@ -252,9 +308,9 @@ class ReadinessConfig(BaseModel):
             if not self.section:
                 raise ValueError("section_non_empty readiness requires section")
             return self
-        if self.mode == "any_section_non_empty":
+        if self.mode in ("any_section_non_empty", "all_sections_non_empty"):
             if not self.sections:
-                raise ValueError("any_section_non_empty readiness requires sections")
+                raise ValueError(f"{self.mode} readiness requires sections")
             return self
         if not self.section or not self.field:
             raise ValueError("field_present readiness requires section and field")
@@ -377,7 +433,7 @@ class YamlConfig(BaseModel):
                         f"Report {code} section {section_name} references "
                         f"unknown source {section.source!r}"
                     )
-            _validate_readiness(code, report, self.sources)
+            _validate_readiness_sections(code, report)
             if report.on_pending is not None and report.on_pending.job not in self.jobs:
                 raise ValueError(
                     f"Report {code} on_pending references unknown job "
@@ -386,18 +442,23 @@ class YamlConfig(BaseModel):
         return self
 
 
-def _validate_readiness(
-    code: str, report: ReportConfig, sources: dict[str, SourceConfig]
-) -> None:
-    """Ensure readiness points at sections and fields that exist on the report.
+class RequestStatusValue(str, Enum):
+    """Lifecycle of an official FPVR request."""
+
+    pending = "pending"
+    ready = "ready"
+    failed = "failed"
+
+
+def _validate_readiness_sections(code: str, report: ReportConfig) -> None:
+    """Ensure readiness points at sections that exist on the report.
 
     Args:
         code: Report code, used in error messages.
         report: Report being validated.
-        sources: Configured sources.
 
     Raises:
-        ValueError: If readiness references are invalid.
+        ValueError: If readiness section references are invalid.
     """
     readiness = report.readiness
     section_names = set(report.sections)
@@ -409,7 +470,7 @@ def _validate_readiness(
                 f"Report {code} readiness section {readiness.section!r} is not assembled"
             )
         return
-    if readiness.mode == "any_section_non_empty":
+    if readiness.mode in ("any_section_non_empty", "all_sections_non_empty"):
         unknown = [name for name in (readiness.sections or []) if name not in section_names]
         if unknown:
             raise ValueError(f"Report {code} readiness sections are not assembled: {unknown}")
@@ -418,16 +479,150 @@ def _validate_readiness(
         raise ValueError(
             f"Report {code} readiness section {readiness.section!r} is not assembled"
         )
-    source = sources[report.sections[readiness.section].source]
-    if readiness.field not in source.columns:
-        raise ValueError(
-            f"Report {code} readiness field {readiness.field!r} is not a column of "
-            f"{report.sections[readiness.section].source}"
+
+
+def json_type_from_uc(type_name: str) -> JsonFieldType:
+    """Map a Unity Catalog ``type_name`` to a public JSON field type.
+
+    Args:
+        type_name: Databricks ``type_name`` or ``type_text``.
+
+    Returns:
+        One of the API JSON types used in generated models.
+    """
+    name = type_name.strip().upper().split("(", 1)[0]
+    if name in {"STRING", "CHAR", "BINARY", "VARCHAR"}:
+        return "string"
+    if name in {"BYTE", "SHORT", "INT", "INTEGER", "LONG", "BIGINT", "SMALLINT", "TINYINT"}:
+        return "integer"
+    if name in {"FLOAT", "DOUBLE", "DECIMAL", "NUMERIC"}:
+        return "number"
+    if name == "BOOLEAN":
+        return "boolean"
+    if name == "DATE":
+        return "date"
+    if name in {"TIMESTAMP", "TIMESTAMP_NTZ", "TIMESTAMP_LTZ"}:
+        return "datetime"
+    return "string"
+
+
+def _validate_mapping_sources(
+    sources: dict[str, SourceConfig],
+    mapping: dict[str, dict[str, MappedFieldConfig]],
+) -> None:
+    """Reject mapping.yml sources that are not configured.
+
+    Args:
+        sources: Configured Unity Catalog sources.
+        mapping: Optional API overlays keyed by source name.
+
+    Raises:
+        ValueError: If mapping.yml names a source that is not in config.yaml.
+    """
+    extra = sorted(set(mapping) - set(sources))
+    if extra:
+        raise ValueError(f"mapping.yml has unknown sources: {extra}")
+
+
+def _build_effective_fields(
+    source_name: str,
+    columns: list[SourceColumn],
+    overlay: dict[str, MappedFieldConfig],
+) -> list[EffectiveField]:
+    """Merge Unity Catalog columns with an optional mapping.yml overlay.
+
+    Args:
+        source_name: YAML source key, used in error messages.
+        columns: Discovered lake columns in position order.
+        overlay: API field overlays. Unmapped columns keep their lake names.
+
+    Returns:
+        Effective fields in Unity Catalog position order.
+
+    Raises:
+        ValueError: If a mapped column is not on the table.
+    """
+    uc_by_name = {column.name: column for column in columns}
+    lake_to_api: dict[str, tuple[str, MappedFieldConfig]] = {}
+    for api_name, spec in overlay.items():
+        lake = spec.column or api_name
+        if lake not in uc_by_name:
+            raise ValueError(
+                f"Source {source_name} mapping references unknown column {lake!r}"
+            )
+        lake_to_api[lake] = (api_name, spec)
+    fields: list[EffectiveField] = []
+    for column in columns:
+        if column.name in lake_to_api:
+            api_name, spec = lake_to_api[column.name]
+            json_type = spec.type or json_type_from_uc(column.type_name)
+            nullable = column.nullable if spec.nullable is None else spec.nullable
+            omit = spec.omit
+        else:
+            api_name = column.name
+            json_type = json_type_from_uc(column.type_name)
+            nullable = column.nullable
+            omit = False
+        fields.append(
+            EffectiveField(
+                api_name=api_name,
+                column=column.name,
+                omit=omit,
+                json_type=json_type,
+                nullable=nullable,
+            )
         )
-    if readiness.field in source.omit_from_output:
-        raise ValueError(
-            f"Report {code} readiness field {readiness.field!r} is omitted from output"
-        )
+    return fields
+
+
+def _validate_readiness_fields(
+    reports: dict[str, ReportConfig],
+    effective: dict[str, list[EffectiveField]],
+) -> None:
+    """Require field_present readiness to use a public API field.
+
+    Args:
+        reports: Configured reports.
+        effective: Merged UC + mapping fields keyed by source name.
+
+    Raises:
+        ValueError: If readiness.field is missing or omitted.
+    """
+    for code, report in reports.items():
+        if report.readiness.mode != "field_present":
+            continue
+        source_name = report.sections[report.readiness.section].source
+        fields = {field.api_name: field for field in effective[source_name]}
+        field = report.readiness.field
+        spec = fields.get(field)
+        if spec is None:
+            raise ValueError(
+                f"Report {code} readiness field {field!r} is not an API field of "
+                f"{source_name}"
+            )
+        if spec.omit:
+            raise ValueError(
+                f"Report {code} readiness field {field!r} is omitted from output"
+            )
+
+
+def _validate_identity_search_fields(settings: "Settings") -> None:
+    """Require identity search keys to resolve to Unity Catalog columns.
+
+    Args:
+        settings: Loaded settings including discovered identity columns.
+
+    Raises:
+        ValueError: If a search field cannot be resolved.
+    """
+    for field in _IDENTITY_SEARCH_FIELDS:
+        try:
+            settings.column_for("identity", field)
+        except KeyError as exc:
+            raise ValueError(
+                f"Identity source cannot resolve search field {field!r} from "
+                "Unity Catalog columns or mapping.yml"
+            ) from exc
 
 
 def _validate_job_parameter_value(value: str) -> None:
@@ -490,7 +685,7 @@ def substitute_job_parameters(
 
 
 class Settings(BaseModel):
-    """Process settings loaded from ``config.yaml``.
+    """Process settings from YAML plus Unity Catalog schemas discovered at startup.
 
     ``DATABRICKS_HOST`` and ``DATABRICKS_WAREHOUSE_ID`` override YAML when set.
     Databricks Apps typically injects both.
@@ -507,6 +702,9 @@ class Settings(BaseModel):
     sources: dict[str, SourceConfig]
     jobs: dict[str, JobConfig] = Field(default_factory=dict)
     reports: dict[str, ReportConfig]
+    column_mapping: dict[str, dict[str, MappedFieldConfig]]
+    source_schemas: dict[str, list[SourceColumn]] = Field(default_factory=dict)
+    effective_fields: dict[str, list[EffectiveField]] = Field(default_factory=dict)
 
     @property
     def subject_identity_table(self) -> str:
@@ -565,20 +763,195 @@ class Settings(BaseModel):
             return None
         return self.jobs[report.on_pending.job]
 
+    def source_columns(self, source_name: str) -> list[str]:
+        """Return Unity Catalog column names for one source in table order.
+
+        Args:
+            source_name: YAML source key.
+
+        Returns:
+            Lake column names, including omitted join keys.
+
+        Raises:
+            KeyError: If ``source_name`` is not a known source.
+        """
+        return [field.column for field in self.effective_fields[source_name]]
+
+    def omitted_fields(self, source_name: str) -> set[str]:
+        """Return API field names that are selected but hidden from report JSON.
+
+        Args:
+            source_name: YAML source key.
+
+        Returns:
+            Omitted API names.
+        """
+        return {
+            field.api_name
+            for field in self.effective_fields[source_name]
+            if field.omit
+        }
+
+    def column_for(self, source_name: str, field: str) -> str:
+        """Return the Unity Catalog column for one API field.
+
+        Matches the public API name first, then a case-insensitive lake column
+        or API name so identity search keys resolve without a mapping overlay.
+
+        Args:
+            source_name: YAML source key.
+            field: Public API field name.
+
+        Returns:
+            Lake column name.
+
+        Raises:
+            KeyError: If the source or field is unknown.
+        """
+        fields = self.effective_fields[source_name]
+        for spec in fields:
+            if spec.api_name == field:
+                return spec.column
+        lowered = field.lower()
+        for spec in fields:
+            if spec.api_name.lower() == lowered or spec.column.lower() == lowered:
+                return spec.column
+        raise KeyError(field)
+
+    def api_name_for(self, source_name: str, field: str) -> str:
+        """Return the public API field name for a search key or lake column.
+
+        Args:
+            source_name: YAML source key.
+            field: API name or lake column name.
+
+        Returns:
+            Effective API field name after mapping overlay.
+
+        Raises:
+            KeyError: If the source or field is unknown.
+        """
+        lake = self.column_for(source_name, field)
+        for spec in self.effective_fields[source_name]:
+            if spec.column == lake:
+                return spec.api_name
+        raise KeyError(field)
+
+    def identity_value(self, subject: Any, field: str) -> Any:
+        """Read one identity search field from a generated identity row.
+
+        Args:
+            subject: Generated identity model instance.
+            field: Canonical search key (``ssn``, ``first_name``, ...).
+
+        Returns:
+            Attribute value, or ``None`` if the generated model has no such field.
+        """
+        return getattr(subject, self.api_name_for("identity", field), None)
+
+    def public_fields(self, source_name: str) -> list[str]:
+        """Return API field names that are included in report JSON.
+
+        Args:
+            source_name: YAML source key.
+
+        Returns:
+            Field names in Unity Catalog order, excluding omitted fields.
+        """
+        return [
+            field.api_name
+            for field in self.effective_fields[source_name]
+            if not field.omit
+        ]
+
+    def remap_row(
+        self,
+        source_name: str,
+        uc_row: dict[str, Any],
+        *,
+        include_omitted: bool = False,
+    ) -> dict[str, Any]:
+        """Rename a lake-column dict to API field names.
+
+        Args:
+            source_name: YAML source key.
+            uc_row: Values keyed by Unity Catalog column names.
+            include_omitted: When true, include fields marked ``omit``.
+
+        Returns:
+            Dict keyed by API field names.
+        """
+        out: dict[str, Any] = {}
+        for spec in self.effective_fields[source_name]:
+            if spec.omit and not include_omitted:
+                continue
+            out[spec.api_name] = uc_row.get(spec.column)
+        return out
+
+
+def _discover_source_schemas(settings: Settings) -> dict[str, list[SourceColumn]]:
+    """Load Unity Catalog columns for every configured source.
+
+    Args:
+        settings: YAML settings with resolved table names.
+
+    Returns:
+        Source name to discovered columns.
+
+    Raises:
+        ValueError: If auth, the tables API, or a filter column fails.
+    """
+    from app.core.app_auth import AppPrincipalError, get_app_sp_token
+    from app.core.sql import SqlStatementError, describe_unity_catalog_table
+
+    try:
+        token = get_app_sp_token(workspace_url=settings.workspace_host)
+    except AppPrincipalError as exc:
+        raise ValueError(f"Cannot discover Unity Catalog schemas: {exc}") from exc
+    schemas: dict[str, list[SourceColumn]] = {}
+    for name, source in settings.sources.items():
+        table = settings.source_table(name)
+        try:
+            columns = describe_unity_catalog_table(
+                table, access_token=token, host=settings.workspace_host
+            )
+        except SqlStatementError as exc:
+            raise ValueError(
+                f"Cannot load Unity Catalog schema for source {name} ({table}): {exc}"
+            ) from exc
+        lake_names = {column.name for column in columns}
+        if source.filter.column not in lake_names:
+            raise ValueError(
+                f"Source {name} filter column {source.filter.column!r} is not "
+                f"on Unity Catalog table {table}"
+            )
+        schemas[name] = columns
+    return schemas
+
 
 @lru_cache
 def get_settings() -> Settings:
-    """Load and cache process-wide settings from the repository YAML file.
+    """Load and cache process-wide settings from YAML and Unity Catalog.
 
     Returns:
         The cached ``Settings`` instance.
+
+    Raises:
+        ValueError: If YAML is invalid or Unity Catalog discovery fails.
     """
     with _CONFIG_PATH.open(encoding="utf-8") as config_file:
         config = YamlConfig.model_validate(yaml.safe_load(config_file))
 
+    with _MAPPING_PATH.open(encoding="utf-8") as mapping_file:
+        mapping = MappingYaml.model_validate(
+            yaml.safe_load(mapping_file) or {"version": 1, "sources": {}}
+        )
+
+    _validate_mapping_sources(config.sources, mapping.sources)
+
     injected_host = os.getenv("DATABRICKS_HOST", "").strip()
     injected_warehouse = os.getenv("DATABRICKS_WAREHOUSE_ID", "").strip()
-    return Settings(
+    settings = Settings(
         app_name=config.application.name,
         environment=config.application.environment,
         workspace_host=_normalize_workspace_host(injected_host or config.databricks.host),
@@ -588,4 +961,33 @@ def get_settings() -> Settings:
         sources=config.sources,
         jobs=config.jobs,
         reports=config.reports,
+        column_mapping=mapping.sources,
     )
+    schemas = _discover_source_schemas(settings)
+    effective = {
+        name: _build_effective_fields(name, columns, mapping.sources.get(name) or {})
+        for name, columns in schemas.items()
+    }
+    settings = settings.model_copy(
+        update={"source_schemas": schemas, "effective_fields": effective}
+    )
+    _validate_readiness_fields(config.reports, effective)
+    _validate_identity_search_fields(settings)
+    return settings
+
+def _known_report_code(value: str) -> str:
+    if value not in get_settings().reports:
+        raise ValueError(f"Unknown report_code: {value}")
+    return value
+
+
+def _report_code_json_schema(schema: dict[str, Any]) -> None:
+    """Fill the OpenAPI enum from configured reports without importing settings at type-definition time."""
+    schema["enum"] = list(get_settings().reports)
+
+
+ReportCode = Annotated[
+    str,
+    AfterValidator(_known_report_code),
+    Field(min_length=1, examples=["FPVR-Application-Bundle"], json_schema_extra=_report_code_json_schema),
+]

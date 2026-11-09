@@ -22,25 +22,40 @@ _cached_token: str | None = None
 _cached_until: float = 0.0
 
 
-def get_app_sp_token(*, fallback_token: str | None = None) -> str:
+def get_app_sp_token(
+    *, fallback_token: str | None = None, workspace_url: str | None = None
+) -> str:
     """Return an OAuth access token for the Databricks App service principal.
 
-    Databricks Apps inject ``DATABRICKS_CLIENT_ID`` and
-    ``DATABRICKS_CLIENT_SECRET``. The token is cached until shortly before
-    expiry. Locally, ``DATABRICKS_TOKEN`` or ``fallback_token`` (the caller
-    OBO token) is used when client credentials are absent.
+    Resolution order:
+
+    1. ``DATABRICKS_TOKEN`` when set. It is used as-is, without an OIDC call.
+       CI sets it from the token it already minted for the Postman run.
+    2. A cached client-credentials token, if still valid.
+    3. OAuth client credentials (``DATABRICKS_CLIENT_ID`` /
+       ``DATABRICKS_CLIENT_SECRET``) with ``scope=sql jobs unity-catalog``.
+    4. ``fallback_token`` (the caller OBO token) when no client credentials
+       are configured.
 
     Args:
-        fallback_token: Caller token used when App SP credentials and
-            ``DATABRICKS_TOKEN`` are not set.
+        fallback_token: Caller token used only when neither ``DATABRICKS_TOKEN``
+            nor App SP client credentials are configured.
+        workspace_url: Workspace host used for the OIDC token request. When
+            omitted, ``workspace_host()`` (settings) is used. Pass this when
+            calling from ``get_settings()`` to avoid recursion.
 
     Returns:
-        A Bearer access token for App SP SQL or Jobs API calls.
+        A Bearer access token for App SP SQL, Jobs, or Unity Catalog calls.
 
     Raises:
         AppPrincipalError: If no usable token can be obtained.
     """
     global _cached_token, _cached_until
+
+    injected_token = os.getenv("DATABRICKS_TOKEN", "").strip()
+    if injected_token:
+        return injected_token
+
     now = time.time()
     with _lock:
         if _cached_token and now < _cached_until:
@@ -49,23 +64,24 @@ def get_app_sp_token(*, fallback_token: str | None = None) -> str:
     client_id = os.getenv("DATABRICKS_CLIENT_ID", "").strip()
     client_secret = os.getenv("DATABRICKS_CLIENT_SECRET", "").strip()
     if not client_id or not client_secret:
-        local_token = os.getenv("DATABRICKS_TOKEN", "").strip()
-        if local_token:
-            return local_token
         if fallback_token and fallback_token.strip():
             return fallback_token.strip()
         raise AppPrincipalError(
             "DATABRICKS_CLIENT_ID and DATABRICKS_CLIENT_SECRET are required "
-            "to start pending-report jobs as the app service principal. "
+            "to discover Unity Catalog schemas and start pending-report jobs. "
             "Locally set DATABRICKS_TOKEN instead."
         )
 
     try:
-        host = workspace_host()
+        host = (workspace_url or workspace_host()).strip().rstrip("/")
     except Exception as exc:
         raise AppPrincipalError(str(exc)) from exc
+    if not host:
+        raise AppPrincipalError("Databricks workspace host is not set")
 
-    body = urlencode({"grant_type": "client_credentials", "scope": "all-apis"}).encode()
+    body = urlencode(
+        {"grant_type": "client_credentials", "scope": "sql jobs unity-catalog"}
+    ).encode()
     basic = b64encode(f"{client_id}:{client_secret}".encode()).decode()
     request = Request(
         f"{host}/oidc/v1/token",

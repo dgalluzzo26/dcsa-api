@@ -1,0 +1,1 @@
+"""Generated source row models from Unity Catalog plus mapping.yml."""

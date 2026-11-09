@@ -7,68 +7,67 @@ from typing import Any
 from app import __version__
 from app.core.config import ReportConfig, get_settings
 from app.core.sql import WarehouseNotConfiguredError, workspace_host
-from app.models.fpvr import REPORT_TITLES, ReportCode
 from app.models.report_contract import (
-    SECTION_ROW_MODELS,
     ApiCatalog,
     CatalogApi,
     CatalogField,
     CatalogReport,
     CatalogScenario,
 )
+from app.models.sources.registry import ready_source_models
 
 _SAMPLE_REQUEST_ID = "7c2e1a8f-4b0d-4e9a-9f31-2a6c8d5e1b04"
 _SAMPLE_CANDIDATE_ID = "cnd.opaque.token.example"
 
 _SAMPLE_SUBJECT: dict[str, Any] = {
-    "FIRST_NAME": "Kevin",
-    "LAST_NAME": "Jackson",
-    "DATE_OF_BIRTH": "1969-02-10T00:00:00",
-    "PLACE_OF_BIRTH": "VA",
-    "SEX": "M",
-    "CITIZENSHIP": "USA",
-    "MARITAL_STATUS": "M",
-    "UPDATED_TS": "2026-09-01T12:00:00",
-    "RECORD_VERSION": "1",
+    "first_name": "Kevin",
+    "last_name": "Jackson",
+    "date_of_birth": "1969-02-10T00:00:00",
+    "place_of_birth": "VA",
+    "sex": "M",
+    "citizenship": "USA",
+    "marital_status": "M",
+    "updated_ts": "2026-09-01T12:00:00",
+    "record_version": "1",
 }
 
 _SAMPLE_ROWS: dict[str, dict[str, Any]] = {
     "identity": dict(_SAMPLE_SUBJECT),
     "status": {
-        "ORG_CODE": "DCSA",
-        "POSITION_TITLE": "Analyst",
-        "DUTY_LOCATION": "Quantico, VA",
-        "RISK_TIER": "M",
-        "ELIGIBILITY_LEVEL": "S",
-        "STATUS_CODE": "ELIGIBLE",
-        "STATUS_EFFECTIVE_DATE": "2024-06-01",
-        "UPDATED_TS": "2026-09-01T12:00:00",
-        "RECORD_VERSION": "1",
+        "organization_code": "DCSA",
+        "position_title": "Analyst",
+        "duty_location": "Quantico, VA",
+        "risk_tier": "M",
+        "eligibility_level": "S",
+        "status_code": "ELIGIBLE",
+        "status_effective_date": "2024-06-01",
+        "updated_ts": "2026-09-01T12:00:00",
+        "record_version": "1",
     },
     "check": {
-        "CHECK_ID": "CHK-1001",
-        "LOCATION_CODE": "QAN",
-        "CHECK_TYPE": "NACI",
-        "RESULT_CODE": "FAVORABLE",
-        "RESULT_SCORE": "0",
-        "CHECKED_TS": "2024-05-15T08:00:00",
-        "LOAD_SEQ": "12",
+        "check_id": "CHK-1001",
+        "location_code": "QAN",
+        "check_type": "NACI",
+        "result_code": "FAVORABLE",
+        "result_score": "0",
+        "checked_ts": "2024-05-15T08:00:00",
+        "load_seq": "12",
     },
     "activity": {
-        "ACTIVITY_ID": "ACT-2001",
-        "LOCATION_CODE": "QAN",
-        "ACTIVITY_TYPE": "INVESTIGATION",
-        "DETAIL": "Case opened",
-        "EVENT_TS": "2024-04-02T14:30:00",
-        "LOAD_SEQ": "8",
+        "activity_id": "ACT-2001",
+        "location_code": "QAN",
+        "activity_type": "INVESTIGATION",
+        "detail": "Case opened",
+        "event_ts": "2024-04-02T14:30:00",
+        "load_seq": "8",
     },
     "signal": {
-        "SIGNAL_ID": "SIG-3001",
-        "LOCATION_CODE": "QAN",
-        "SIGNAL_TYPE": "CV_ALERT",
-        "SEVERITY": "LOW",
-        "SIGNAL_TS": "2025-11-03T09:12:00",
-        "LOAD_SEQ": "3",
+        "signal_id": "SIG-3001",
+        "location_code": "QAN",
+        "signal_type": "CV_ALERT",
+        "severity": "LOW",
+        "signal_ts": "2025-11-03T09:12:00",
+        "load_seq": "3",
     },
 }
 
@@ -90,21 +89,22 @@ def _json_type(schema: dict[str, Any]) -> tuple[str, bool]:
 
 
 def _public_columns(source_name: str) -> list[str]:
-    """Return JSON columns for a source (configured columns minus omitted).
+    """Return JSON field names for a source (mapped fields minus omitted).
 
     Args:
         source_name: YAML source key.
 
     Returns:
-        Public column names in SELECT order.
+        Public API field names in Unity Catalog order after mapping overlay.
     """
-    source = get_settings().sources[source_name]
-    omit = set(source.omit_from_output)
-    return [name for name in source.columns if name not in omit]
+    return get_settings().public_fields(source_name)
 
 
 def _sample_row(source_name: str) -> dict[str, Any]:
-    """Return an example row for a source, synthesizing unknowns.
+    """Return an example public row for one source, keyed by API field name.
+
+    Sample values are looked up by Unity Catalog column. Columns without a
+    sample value get a placeholder. Omitted fields are skipped.
 
     Args:
         source_name: YAML source key.
@@ -112,15 +112,12 @@ def _sample_row(source_name: str) -> dict[str, Any]:
     Returns:
         Example JSON object for one section row.
     """
-    public = _public_columns(source_name)
     known = _SAMPLE_ROWS.get(source_name) or {}
-    row: dict[str, Any] = {}
-    for name in public:
-        if name in known:
-            row[name] = known[name]
-        else:
-            row[name] = f"example-{name.lower()}"
-    return row
+    return {
+        field.api_name: known.get(field.column, f"example-{field.column.lower()}")
+        for field in get_settings().effective_fields[source_name]
+        if not field.omit
+    }
 
 
 def _fields_for_source(source_name: str) -> list[CatalogField]:
@@ -133,11 +130,12 @@ def _fields_for_source(source_name: str) -> list[CatalogField]:
         Catalog field metadata.
     """
     public = _public_columns(source_name)
-    model = SECTION_ROW_MODELS.get(source_name)
+    model = ready_source_models().get(source_name)
     schema_fields: dict[str, CatalogField] = {}
     if model is not None:
-        props = model.model_json_schema().get("properties") or {}
-        required = set(model.model_json_schema().get("required") or [])
+        json_schema = model.model_json_schema()
+        props = json_schema.get("properties") or {}
+        required = set(json_schema.get("required") or [])
         for name, spec in props.items():
             json_type, nullable = _json_type(spec)
             schema_fields[name] = CatalogField(
@@ -155,50 +153,46 @@ def _fields_for_source(source_name: str) -> list[CatalogField]:
 
 
 def _readiness_summary(report: ReportConfig) -> str:
-    """Turn a YAML readiness rule into catalog prose.
+    """Describe YAML readiness as a short catalog string.
 
     Args:
         report: Configured report.
 
     Returns:
-        Human-readable readiness description.
+        Human-readable readiness summary.
     """
     readiness = report.readiness
     if readiness.mode == "always":
-        return (
-            "Ready when identity is resolved. Configured sections may be empty "
-            "arrays if ABAC hides rows."
-        )
+        return "Always ready after assemble"
     if readiness.mode == "section_non_empty":
-        return f"Ready when at least one {readiness.section} row exists."
+        return f"Ready when section {readiness.section!r} is non-empty"
     if readiness.mode == "any_section_non_empty":
-        names = " or ".join(readiness.sections or [])
-        return f"Pending until at least one {names} row exists."
+        return f"Ready when any of {list(readiness.sections or [])} is non-empty"
+    if readiness.mode == "all_sections_non_empty":
+        return f"Ready when all of {list(readiness.sections or [])} are non-empty"
     return (
-        f"Ready when {readiness.field} is present on a {readiness.section} row."
+        f"Ready when {readiness.section!r} has a non-empty {readiness.field!r} field"
     )
 
 
-def _example_envelope(code: ReportCode | str) -> dict[str, Any]:
-    """Build a sample nested report body for one FPVR code.
+def _example_envelope(code: str) -> dict[str, Any]:
+    """Build a sample nested report body for one configured report.
 
     Args:
-        code: YAML report key or ``ReportCode``.
+        code: YAML report key, for example ``FPVR-Application-Bundle``.
 
     Returns:
         Example JSON matching ``FPVRReportResponse``.
     """
-    report_code = code if isinstance(code, ReportCode) else ReportCode(code)
-    settings = get_settings()
-    report = settings.reports[report_code.value]
+    report = get_settings().reports[code]
     data = {
         section_name: [_sample_row(section.source)]
         for section_name, section in report.sections.items()
     }
     return {
-        "code": report_code.value,
-        "title": REPORT_TITLES[report_code],
-        "subject": dict(_SAMPLE_SUBJECT),
+        "code": code,
+        "title": report.name,
+        "subject": _sample_row("identity"),
         "data": data,
     }
 
@@ -228,10 +222,19 @@ def build_catalog() -> ApiCatalog:
             )
         )
 
+    sample_code = next(iter(settings.reports))
     create_body = {
         "first_name": "Kevin",
         "last_name": "Jackson",
         "date_of_birth": "1969-02-10",
+    }
+    accepted = {
+        "request_id": _SAMPLE_REQUEST_ID,
+        "status": "ready",
+        "requested_at": "2026-10-01T16:00:00Z",
+        "requested_by": "sp-client-id",
+        "resolution_method": "unique_match",
+        "report": _example_envelope(sample_code),
     }
     pending = {
         "request_id": _SAMPLE_REQUEST_ID,
@@ -283,9 +286,9 @@ def build_catalog() -> ApiCatalog:
         ),
     ]
 
-    for code in ReportCode:
-        slug = code.value.lower()
-        title = REPORT_TITLES[code]
+    for code, report in settings.reports.items():
+        slug = code
+        title = report.name
         accepted = {
             "request_id": _SAMPLE_REQUEST_ID,
             "status": "ready",
@@ -297,12 +300,12 @@ def build_catalog() -> ApiCatalog:
         }
         apis.append(
             CatalogApi(
-                id=f"request-{slug}",
+                id=f"request-{slug.lower()}",
                 method="POST",
                 path=f"/api/v1/requests/{slug}",
                 auth="Bearer (workspace OIDC token)",
                 summary=(
-                    f"Resolve a subject and open one official {code.value} {title} "
+                    f"Resolve a subject and open one official {code} {title} "
                     "request. SSN is optional when first_name + last_name + "
                     "date_of_birth is unique."
                 ),
@@ -381,12 +384,12 @@ def build_catalog() -> ApiCatalog:
         )
         apis.append(
             CatalogApi(
-                id=f"list-{slug}",
+                id=f"list-{slug.lower()}",
                 method="GET",
                 path=f"/api/v1/requests/{slug}",
                 auth="Bearer (workspace OIDC token)",
                 summary=(
-                    f"List official {code.value} {title} requests. Optional filters: "
+                    f"List official {code} {title} requests. Optional filters: "
                     "status, requested_by, requested_at_after, requested_at_before, "
                     "resolution_method, source, limit. Nested report is not assembled."
                 ),
@@ -414,7 +417,7 @@ def build_catalog() -> ApiCatalog:
         )
         apis.append(
             CatalogApi(
-                id=f"get-{slug}",
+                id=f"get-{slug.lower()}",
                 method="GET",
                 path=f"/api/v1/requests/{slug}/{{request_id}}",
                 auth="Bearer (OBO SQL; ABAC/RBAC applied when assembling report)",
