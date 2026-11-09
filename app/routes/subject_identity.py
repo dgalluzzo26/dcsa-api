@@ -8,16 +8,21 @@ from __future__ import annotations
 
 from datetime import date
 
-from fastapi import APIRouter, HTTPException, Query, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi import APIRouter, HTTPException, Query, Request, Security, status
 from pydantic import ValidationError
 
 from app.core.http_logging import gateway_error, log_failure
-from app.core.obo import get_obo_token
+from app.core.obo import get_obo_token, bearer_scheme
 from app.core.sql import WarehouseNotConfiguredError
 from app.models import ErrorResponse, SubjectIdentityListResponse, SubjectIdentitySearch
 from app.services import SubjectIdentityQueryError, get_subject_identity_service
 
-router = APIRouter(prefix="/subject-identities", tags=["subject-identity"])
+router = APIRouter(
+    prefix="/v1/subject-identities",
+    tags=["subject-identity"],
+    dependencies=[Depends(bearer_scheme)],
+)
 
 _ERROR_RESPONSES = {
     400: {"model": ErrorResponse},
@@ -117,7 +122,7 @@ def search_subject_identities(
     \f
     Args:
         request: Incoming request carrying the caller's access token.
-        body: Search filters. Validation (422) runs before this handler.
+        body: Search filters. Validation (400) runs before this handler.
 
     Returns:
         Matching subject identities.

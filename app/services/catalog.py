@@ -5,73 +5,69 @@ from __future__ import annotations
 from typing import Any
 
 from app import __version__
-from app.core.config import get_settings
+from app.core.config import ReportConfig, get_settings
 from app.core.sql import WarehouseNotConfiguredError, workspace_host
-from app.models.fpvr import ReportCode
 from app.models.report_contract import (
-    SECTION_ROW_MODELS,
     ApiCatalog,
     CatalogApi,
     CatalogField,
     CatalogReport,
     CatalogScenario,
-    REPORT_READINESS,
-    REPORT_SOURCES,
-    report_title,
 )
+from app.models.sources.registry import ready_source_models
 
 _SAMPLE_REQUEST_ID = "7c2e1a8f-4b0d-4e9a-9f31-2a6c8d5e1b04"
 _SAMPLE_CANDIDATE_ID = "cnd.opaque.token.example"
 
 _SAMPLE_SUBJECT: dict[str, Any] = {
-    "FIRST_NAME": "Kevin",
-    "LAST_NAME": "Jackson",
-    "DATE_OF_BIRTH": "1969-02-10T00:00:00",
-    "PLACE_OF_BIRTH": "VA",
-    "SEX": "M",
-    "CITIZENSHIP": "USA",
-    "MARITAL_STATUS": "M",
-    "UPDATED_TS": "2026-09-01T12:00:00",
-    "RECORD_VERSION": "1",
+    "first_name": "Kevin",
+    "last_name": "Jackson",
+    "date_of_birth": "1969-02-10T00:00:00",
+    "place_of_birth": "VA",
+    "sex": "M",
+    "citizenship": "USA",
+    "marital_status": "M",
+    "updated_ts": "2026-09-01T12:00:00",
+    "record_version": "1",
 }
 
 _SAMPLE_ROWS: dict[str, dict[str, Any]] = {
     "identity": dict(_SAMPLE_SUBJECT),
     "status": {
-        "ORG_CODE": "DCSA",
-        "POSITION_TITLE": "Analyst",
-        "DUTY_LOCATION": "Quantico, VA",
-        "RISK_TIER": "M",
-        "ELIGIBILITY_LEVEL": "S",
-        "STATUS_CODE": "ELIGIBLE",
-        "STATUS_EFFECTIVE_DATE": "2024-06-01",
-        "UPDATED_TS": "2026-09-01T12:00:00",
-        "RECORD_VERSION": "1",
+        "organization_code": "DCSA",
+        "position_title": "Analyst",
+        "duty_location": "Quantico, VA",
+        "risk_tier": "M",
+        "eligibility_level": "S",
+        "status_code": "ELIGIBLE",
+        "status_effective_date": "2024-06-01",
+        "updated_ts": "2026-09-01T12:00:00",
+        "record_version": "1",
     },
     "check": {
-        "CHECK_ID": "CHK-1001",
-        "LOCATION_CODE": "QAN",
-        "CHECK_TYPE": "NACI",
-        "RESULT_CODE": "FAVORABLE",
-        "RESULT_SCORE": "0",
-        "CHECKED_TS": "2024-05-15T08:00:00",
-        "LOAD_SEQ": "12",
+        "check_id": "CHK-1001",
+        "location_code": "QAN",
+        "check_type": "NACI",
+        "result_code": "FAVORABLE",
+        "result_score": "0",
+        "checked_ts": "2024-05-15T08:00:00",
+        "load_seq": "12",
     },
     "activity": {
-        "ACTIVITY_ID": "ACT-2001",
-        "LOCATION_CODE": "QAN",
-        "ACTIVITY_TYPE": "INVESTIGATION",
-        "DETAIL": "Case opened",
-        "EVENT_TS": "2024-04-02T14:30:00",
-        "LOAD_SEQ": "8",
+        "activity_id": "ACT-2001",
+        "location_code": "QAN",
+        "activity_type": "INVESTIGATION",
+        "detail": "Case opened",
+        "event_ts": "2024-04-02T14:30:00",
+        "load_seq": "8",
     },
     "signal": {
-        "SIGNAL_ID": "SIG-3001",
-        "LOCATION_CODE": "QAN",
-        "SIGNAL_TYPE": "CV_ALERT",
-        "SEVERITY": "LOW",
-        "SIGNAL_TS": "2025-11-03T09:12:00",
-        "LOAD_SEQ": "3",
+        "signal_id": "SIG-3001",
+        "location_code": "QAN",
+        "signal_type": "CV_ALERT",
+        "severity": "LOW",
+        "signal_ts": "2025-11-03T09:12:00",
+        "load_seq": "3",
     },
 }
 
@@ -92,46 +88,111 @@ def _json_type(schema: dict[str, Any]) -> tuple[str, bool]:
     return str(schema.get("type") or "string"), schema.get("type") == "null"
 
 
-def _fields_for_section(section: str) -> list[CatalogField]:
-    """List public JSON fields for one report section.
+def _public_columns(source_name: str) -> list[str]:
+    """Return JSON field names for a source (mapped fields minus omitted).
 
     Args:
-        section: Logical source name.
+        source_name: YAML source key.
+
+    Returns:
+        Public API field names in Unity Catalog order after mapping overlay.
+    """
+    return get_settings().public_fields(source_name)
+
+
+def _sample_row(source_name: str) -> dict[str, Any]:
+    """Return an example public row for one source, keyed by API field name.
+
+    Sample values are looked up by Unity Catalog column. Columns without a
+    sample value get a placeholder. Omitted fields are skipped.
+
+    Args:
+        source_name: YAML source key.
+
+    Returns:
+        Example JSON object for one section row.
+    """
+    known = _SAMPLE_ROWS.get(source_name) or {}
+    return {
+        field.api_name: known.get(field.column, f"example-{field.column.lower()}")
+        for field in get_settings().effective_fields[source_name]
+        if not field.omit
+    }
+
+
+def _fields_for_source(source_name: str) -> list[CatalogField]:
+    """List public JSON fields for one configured source.
+
+    Args:
+        source_name: YAML source key.
 
     Returns:
         Catalog field metadata.
     """
-    model = SECTION_ROW_MODELS[section]
-    props = model.model_json_schema().get("properties") or {}
-    required = set(model.model_json_schema().get("required") or [])
-    fields: list[CatalogField] = []
-    for name, spec in props.items():
-        json_type, nullable = _json_type(spec)
-        fields.append(
-            CatalogField(
+    public = _public_columns(source_name)
+    model = ready_source_models().get(source_name)
+    schema_fields: dict[str, CatalogField] = {}
+    if model is not None:
+        json_schema = model.model_json_schema()
+        props = json_schema.get("properties") or {}
+        required = set(json_schema.get("required") or [])
+        for name, spec in props.items():
+            json_type, nullable = _json_type(spec)
+            schema_fields[name] = CatalogField(
                 name=name,
                 type=json_type,
                 nullable=nullable or name not in required,
             )
-        )
+    fields: list[CatalogField] = []
+    for name in public:
+        if name in schema_fields:
+            fields.append(schema_fields[name])
+        else:
+            fields.append(CatalogField(name=name, type="string", nullable=True))
     return fields
 
 
-def _example_envelope(code: ReportCode) -> dict[str, Any]:
-    """Build a sample GET /response body for one report.
+def _readiness_summary(report: ReportConfig) -> str:
+    """Describe YAML readiness as a short catalog string.
 
     Args:
-        code: FPVR report code.
+        report: Configured report.
+
+    Returns:
+        Human-readable readiness summary.
+    """
+    readiness = report.readiness
+    if readiness.mode == "always":
+        return "Always ready after assemble"
+    if readiness.mode == "section_non_empty":
+        return f"Ready when section {readiness.section!r} is non-empty"
+    if readiness.mode == "any_section_non_empty":
+        return f"Ready when any of {list(readiness.sections or [])} is non-empty"
+    if readiness.mode == "all_sections_non_empty":
+        return f"Ready when all of {list(readiness.sections or [])} are non-empty"
+    return (
+        f"Ready when {readiness.section!r} has a non-empty {readiness.field!r} field"
+    )
+
+
+def _example_envelope(code: str) -> dict[str, Any]:
+    """Build a sample nested report body for one configured report.
+
+    Args:
+        code: YAML report key, for example ``FPVR-Application-Bundle``.
 
     Returns:
         Example JSON matching ``FPVRReportResponse``.
     """
-    data = {source: [_SAMPLE_ROWS[source]] for source in REPORT_SOURCES[code]}
+    report = get_settings().reports[code]
+    data = {
+        section_name: [_sample_row(section.source)]
+        for section_name, section in report.sections.items()
+    }
     return {
-        "request_id": _SAMPLE_REQUEST_ID,
-        "report_code": code.value,
-        "report_title": report_title(code),
-        "subject": dict(_SAMPLE_SUBJECT),
+        "code": code,
+        "title": report.name,
+        "subject": _sample_row("identity"),
         "data": data,
     }
 
@@ -142,44 +203,47 @@ def build_catalog() -> ApiCatalog:
     Returns:
         Typed catalog of APIs, scenarios, and per-report schemas.
     """
+    settings = get_settings()
     reports = []
-    for code in ReportCode:
-        sources = list(REPORT_SOURCES[code])
+    for code, report in settings.reports.items():
+        source_names = [section.source for section in report.sections.values()]
         reports.append(
             CatalogReport(
                 report_code=code,
-                title=report_title(code),
-                sources=sources,
-                tables=[get_settings().source_table(s) for s in sources],
-                readiness=REPORT_READINESS[code],
-                data_fields={s: _fields_for_section(s) for s in sources},
+                title=report.name,
+                sources=source_names,
+                tables=[settings.source_table(name) for name in source_names],
+                readiness=_readiness_summary(report),
+                data_fields={
+                    section_name: _fields_for_source(section.source)
+                    for section_name, section in report.sections.items()
+                },
                 example_response=_example_envelope(code),
             )
         )
 
+    sample_code = next(iter(settings.reports))
     create_body = {
-        "report_code": "FPVR-6",
         "first_name": "Kevin",
         "last_name": "Jackson",
         "date_of_birth": "1969-02-10",
     }
     accepted = {
         "request_id": _SAMPLE_REQUEST_ID,
-        "report_code": "FPVR-6",
-        "report_title": "Human Capital",
         "status": "ready",
         "requested_at": "2026-10-01T16:00:00Z",
         "requested_by": "sp-client-id",
         "resolution_method": "unique_match",
+        "report": _example_envelope(sample_code),
     }
-    pending_status = {
+    pending = {
         "request_id": _SAMPLE_REQUEST_ID,
-        "report_code": "FPVR-2",
-        "report_title": "Investigation Summary",
         "status": "pending",
         "requested_at": "2026-10-01T16:00:00Z",
-        "ready_at": None,
         "requested_by": "sp-client-id",
+        "resolution_method": "unique_match",
+        "source": "external",
+        "report": None,
     }
 
     try:
@@ -220,159 +284,171 @@ def build_catalog() -> ApiCatalog:
                 ),
             ],
         ),
-        CatalogApi(
-            id="request",
-            method="POST",
-            path="/api/v1/requests",
-            auth="Bearer (workspace OIDC token)",
-            summary=(
-                "Resolve a subject and open one official FPVR request. SSN is "
-                "optional when first_name + last_name + date_of_birth is unique."
-            ),
-            request_body=create_body,
-            scenarios=[
-                CatalogScenario(
-                    id="unique_match",
-                    http_status=200,
-                    summary="Exactly one subject matched; request_id issued.",
-                    request=create_body,
-                    response=accepted,
-                ),
-                CatalogScenario(
-                    id="candidate_resubmit",
-                    http_status=200,
-                    summary="Caller resubmits an opaque candidate_id from a prior 409.",
-                    request={"report_code": "FPVR-6", "candidate_id": _SAMPLE_CANDIDATE_ID},
-                    response={**accepted, "resolution_method": "candidate_id"},
-                ),
-                CatalogScenario(
-                    id="ambiguous",
-                    http_status=409,
-                    summary="Two or more subjects matched. No request_id. SSN is not returned.",
-                    request=create_body,
-                    response={
-                        "detail": (
-                            "Multiple subjects matched; provide more information or candidate_id"
-                        ),
-                        "total": 2,
-                        "candidates": [
-                            {
-                                "candidate_id": _SAMPLE_CANDIDATE_ID,
-                                "FIRST_NAME": "Kevin",
-                                "LAST_NAME": "Jackson",
-                                "DATE_OF_BIRTH": "1969-02-10T00:00:00",
-                                "PLACE_OF_BIRTH": "VA",
-                                "SEX": "M",
-                                "CITIZENSHIP": "USA",
-                                "MARITAL_STATUS": "M",
-                            }
-                        ],
-                    },
-                ),
-                CatalogScenario(
-                    id="not_found",
-                    http_status=404,
-                    summary="No subject matched. Nothing is written to the request log.",
-                    request=create_body,
-                    response={"detail": "No subject matched the supplied identity"},
-                ),
-                CatalogScenario(
-                    id="missing_identity",
-                    http_status=400,
-                    summary="Body has neither candidate_id nor any identity field.",
-                    request={"report_code": "FPVR-6"},
-                    response={
-                        "detail": [
-                            {
-                                "type": "value_error",
-                                "msg": (
-                                    "Value error, Provide candidate_id, ssn, or "
-                                    "first_name/last_name/date_of_birth"
-                                ),
-                            }
-                        ]
-                    },
-                ),
-                CatalogScenario(
-                    id="unauthorized",
-                    http_status=401,
-                    summary="Missing or invalid caller token.",
-                    response={"detail": "Missing user access token for OBO SQL."},
-                ),
-            ],
-        ),
-        CatalogApi(
-            id="status",
-            method="GET",
-            path="/api/v1/requests/{request_id}",
-            auth="Bearer",
-            summary=(
-                "Poll request lifecycle. Pending reports re-check the lake and may "
-                "flip to ready. SSN is never returned."
-            ),
-            request_body=None,
-            scenarios=[
-                CatalogScenario(
-                    id="pending",
-                    http_status=200,
-                    summary="Report not yet servable (typical for FPVR-2/3/7).",
-                    response=pending_status,
-                ),
-                CatalogScenario(
-                    id="ready",
-                    http_status=200,
-                    summary="Payload can be fetched from GET .../response.",
-                    response={
-                        "request_id": _SAMPLE_REQUEST_ID,
-                        "report_code": "FPVR-6",
-                        "report_title": "Human Capital",
-                        "status": "ready",
-                        "requested_at": "2026-10-01T16:00:00Z",
-                        "ready_at": "2026-10-01T16:00:02Z",
-                        "requested_by": "sp-client-id",
-                    },
-                ),
-                CatalogScenario(
-                    id="not_found",
-                    http_status=404,
-                    summary="Unknown request_id (or not visible to this caller).",
-                    response={"detail": "Request not found"},
-                ),
-            ],
-        ),
-        CatalogApi(
-            id="response",
-            method="GET",
-            path="/api/v1/requests/{request_id}/response",
-            auth="Bearer (OBO SQL; ABAC/RBAC applied)",
-            summary=(
-                "Return the report JSON for a ready request. Envelope is the same "
-                "for every FPVR code; data keys match that report's sections. SSN "
-                "is omitted from subject and every section row."
-            ),
-            request_body=None,
-            scenarios=[
-                CatalogScenario(
-                    id="ready",
-                    http_status=200,
-                    summary="See reports[].example_response for each FPVR code.",
-                    response=_example_envelope(ReportCode.FPVR_6),
-                ),
-                CatalogScenario(
-                    id="not_ready",
-                    http_status=409,
-                    summary="Status is still pending (or failed).",
-                    response={"detail": "Request is not ready"},
-                ),
-                CatalogScenario(
-                    id="not_found",
-                    http_status=404,
-                    summary="Unknown request_id.",
-                    response={"detail": "Request not found"},
-                ),
-            ],
-        ),
     ]
+
+    for code, report in settings.reports.items():
+        slug = code
+        title = report.name
+        accepted = {
+            "request_id": _SAMPLE_REQUEST_ID,
+            "status": "ready",
+            "requested_at": "2026-10-01T16:00:00Z",
+            "requested_by": "sp-client-id",
+            "resolution_method": "unique_match",
+            "source": "external",
+            "report": _example_envelope(code),
+        }
+        apis.append(
+            CatalogApi(
+                id=f"request-{slug.lower()}",
+                method="POST",
+                path=f"/api/v1/requests/{slug}",
+                auth="Bearer (workspace OIDC token)",
+                summary=(
+                    f"Resolve a subject and open one official {code} {title} "
+                    "request. SSN is optional when first_name + last_name + "
+                    "date_of_birth is unique."
+                ),
+                request_body=create_body,
+                scenarios=[
+                    CatalogScenario(
+                        id="unique_match",
+                        http_status=201,
+                        summary="Exactly one subject matched; request_id issued. report is included when ready.",
+                        request=create_body,
+                        response=accepted,
+                    ),
+                    CatalogScenario(
+                        id="candidate_resubmit",
+                        http_status=200,
+                        summary="Caller resubmits an opaque candidate_id from a prior 409.",
+                        request={"candidate_id": _SAMPLE_CANDIDATE_ID},
+                        response={**accepted, "resolution_method": "candidate_id"},
+                    ),
+                    CatalogScenario(
+                        id="ambiguous",
+                        http_status=409,
+                        summary="Two or more subjects matched. No request_id. SSN is not returned.",
+                        request=create_body,
+                        response={
+                            "detail": (
+                                "Multiple subjects matched; provide more information or candidate_id"
+                            ),
+                            "total": 2,
+                            "candidates": [
+                                {
+                                    "candidate_id": _SAMPLE_CANDIDATE_ID,
+                                    "FIRST_NAME": "Kevin",
+                                    "LAST_NAME": "Jackson",
+                                    "DATE_OF_BIRTH": "1969-02-10T00:00:00",
+                                    "PLACE_OF_BIRTH": "VA",
+                                    "SEX": "M",
+                                    "CITIZENSHIP": "USA",
+                                    "MARITAL_STATUS": "M",
+                                }
+                            ],
+                        },
+                    ),
+                    CatalogScenario(
+                        id="not_found",
+                        http_status=404,
+                        summary="No subject matched. Nothing is written to the request log.",
+                        request=create_body,
+                        response={"detail": "No subject matched the supplied identity"},
+                    ),
+                    CatalogScenario(
+                        id="missing_identity",
+                        http_status=400,
+                        summary="Body has neither candidate_id nor any identity field.",
+                        request={},
+                        response={
+                            "detail": [
+                                {
+                                    "type": "value_error",
+                                    "msg": (
+                                        "Value error, Provide candidate_id, ssn, or "
+                                        "first_name/last_name/date_of_birth"
+                                    ),
+                                }
+                            ]
+                        },
+                    ),
+                    CatalogScenario(
+                        id="unauthorized",
+                        http_status=401,
+                        summary="Missing or invalid caller token.",
+                        response={"detail": "Missing user access token for OBO SQL."},
+                    ),
+                ],
+            )
+        )
+        apis.append(
+            CatalogApi(
+                id=f"list-{slug.lower()}",
+                method="GET",
+                path=f"/api/v1/requests/{slug}",
+                auth="Bearer (workspace OIDC token)",
+                summary=(
+                    f"List official {code} {title} requests. Optional filters: "
+                    "status, requested_by, requested_at_after, requested_at_before, "
+                    "resolution_method, source, limit. Nested report is not assembled."
+                ),
+                request_body=None,
+                scenarios=[
+                    CatalogScenario(
+                        id="list_ok",
+                        http_status=200,
+                        summary="Newest matching rows for this report; report is null.",
+                        request={
+                            "status": "ready",
+                            "source": "external",
+                            "limit": 50,
+                        },
+                        response={"items": [{**pending, "status": "ready"}], "total": 1},
+                    ),
+                    CatalogScenario(
+                        id="list_empty",
+                        http_status=200,
+                        summary="No matching rows.",
+                        response={"items": [], "total": 0},
+                    ),
+                ],
+            )
+        )
+        apis.append(
+            CatalogApi(
+                id=f"get-{slug.lower()}",
+                method="GET",
+                path=f"/api/v1/requests/{slug}/{{request_id}}",
+                auth="Bearer (OBO SQL; ABAC/RBAC applied when assembling report)",
+                summary=(
+                    f"Return the same body as POST /api/v1/requests/{slug}. Pending "
+                    "reports re-check the lake and may flip to ready with report set. "
+                    "SSN is never returned."
+                ),
+                request_body=None,
+                scenarios=[
+                    CatalogScenario(
+                        id="pending",
+                        http_status=200,
+                        summary="Report not yet servable. report is null.",
+                        response=pending,
+                    ),
+                    CatalogScenario(
+                        id="ready",
+                        http_status=200,
+                        summary="Same envelope as POST 201; report is populated.",
+                        response=accepted,
+                    ),
+                    CatalogScenario(
+                        id="not_found",
+                        http_status=404,
+                        summary="Unknown request_id, another report code, or not visible to this caller.",
+                        response={"detail": "Request not found"},
+                    ),
+                ],
+            )
+        )
 
     return ApiCatalog(
         title="DCSA FPVR API catalog",
@@ -385,7 +461,7 @@ def build_catalog() -> ApiCatalog:
             "Official requests are logged as the app service principal to "
             "dcsa_catalog.dcsa_api.api_request_log.",
             "Subject and report SELECT statements run on-behalf-of the caller.",
-            "SSN is an internal join key only; it is not returned on candidates, status, or response.",
+            "SSN is an internal join key only; it is not returned on candidates or request bodies.",
             "Interactive docs: /docs  ·  ReDoc: /redoc  ·  This catalog JSON: /api/v1/catalog",
         ],
     )

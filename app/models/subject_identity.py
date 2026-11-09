@@ -1,16 +1,17 @@
 """Subject identity request/response schemas.
 
-Schemas for lookups against ``dcsa_catalog.edladmin.subject_identity``. Response
-field names intentionally mirror the Unity Catalog column names so the API
-contract matches the source table.
+Response field names are API DTOs from ``mapping.yml``, not Unity Catalog
+column names.
 """
 
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import date
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+from app.models.sources.registry import identity_response_model
 
 
 class SubjectIdentitySearch(BaseModel):
@@ -82,32 +83,7 @@ class SubjectIdentitySearch(BaseModel):
         return self
 
 
-class SubjectIdentity(BaseModel):
-    """A single row from ``dcsa_catalog.edladmin.subject_identity``.
-
-    Attributes:
-        SSN: Social Security Number.
-        FIRST_NAME: Subject's first name.
-        LAST_NAME: Subject's last name.
-        DATE_OF_BIRTH: Subject's date of birth.
-        PLACE_OF_BIRTH: Subject's place of birth.
-        SEX: Subject's recorded sex.
-        CITIZENSHIP: Subject's citizenship.
-        MARITAL_STATUS: Subject's marital status.
-        UPDATED_TS: Timestamp of the last update to the row.
-        RECORD_VERSION: Version number of the row.
-    """
-
-    SSN: str
-    FIRST_NAME: str
-    LAST_NAME: str
-    DATE_OF_BIRTH: datetime | None = None
-    PLACE_OF_BIRTH: str | None = None
-    SEX: str | None = None
-    CITIZENSHIP: str | None = None
-    MARITAL_STATUS: str | None = None
-    UPDATED_TS: str | None = None
-    RECORD_VERSION: str | None = None
+SubjectIdentity = identity_response_model()
 
 
 class SubjectIdentityListResponse(BaseModel):

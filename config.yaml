@@ -1,0 +1,108 @@
+# Live SQL/catalog settings. API field names are in mapping.yml.
+# Source columns and types are discovered from Unity Catalog at startup.
+
+version: 1
+
+application:
+  name: dcsa-api
+  environment: dev
+
+databricks:
+  host: https://govfood-dsca.cloud.databricks.us
+  warehouse_id: c56ad4dc84dcac90
+  default_catalog_schema: dcsa_catalog.edladmin
+  request_log_table: dcsa_catalog.dcsa_api.api_request_log
+
+sources:
+  identity:
+    table: subject_identity
+    filter:
+      column: SSN
+      parameter: subject_ssn
+
+  status:
+    table: subject_status
+    filter:
+      column: SSN
+      parameter: subject_ssn
+
+  check:
+    table: subject_check
+    filter:
+      column: SSN
+      parameter: subject_ssn
+
+  activity:
+    table: subject_activity
+    filter:
+      column: SSN
+      parameter: subject_ssn
+
+  signal:
+    table: subject_signal
+    filter:
+      column: SSN
+      parameter: subject_ssn
+
+jobs:
+  mock_async_job:
+    job_id: 141195585457411
+    parameters:
+      request_id: "{{request_id}}"
+      subject_ssn: "{{subject_ssn}}"
+      subject_first_name: "{{subject_first_name}}"
+      subject_last_name: "{{subject_last_name}}"
+      subject_date_of_birth: "{{subject_date_of_birth}}"
+
+reports:
+  FPVR-Application-Bundle:
+    name: Application Bundle
+    sections:
+      identity:
+        source: identity
+      status:
+        source: status
+      check:
+        source: check
+    readiness:
+      mode: always
+
+  FPVR-Investigation-Summary:
+    name: Investigation Summary
+    sections:
+      check:
+        source: check
+      activity:
+        source: activity
+    readiness:
+      mode: any_section_non_empty
+      sections:
+        - check
+        - activity
+    on_pending:
+      job: mock_async_job
+
+  FPVR-CV-Summary:
+    name: CV Summary
+    sections:
+      identity:
+        source: identity
+      status:
+        source: status
+    readiness:
+      mode: always
+
+  FPVR-Adjudication-Summary:
+    name: Adjudication Summary
+    sections:
+      status:
+        source: status
+      check:
+        source: check
+    readiness:
+      mode: all_sections_non_empty
+      sections:
+        - status
+        - check
+    on_pending:
+      job: mock_async_job

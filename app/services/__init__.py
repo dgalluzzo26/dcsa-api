@@ -10,7 +10,6 @@ from app.services.fpvr import (
     AmbiguousSubjectError,
     FPVRRequestService,
     OfficialRequestNotFoundError,
-    RequestNotReadyError,
     SubjectNotFoundError,
     get_fpvr_request_service,
 )
@@ -30,7 +29,6 @@ __all__ = [
     "ReportQueryError",
     "RequestLogError",
     "RequestLogService",
-    "RequestNotReadyError",
     "SubjectIdentityQueryError",
     "SubjectIdentityService",
     "SubjectNotFoundError",

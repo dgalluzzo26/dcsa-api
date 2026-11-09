@@ -1,181 +1,13 @@
-"""Shared FPVR report section contract used by assembly and the catalog."""
+"""Shared FPVR catalog schemas. Source row models are generated at startup."""
 
 from __future__ import annotations
 
-from datetime import datetime
+from pydantic import BaseModel
 
-from pydantic import BaseModel, ConfigDict
+from app.models.sources.registry import ready_source_models
 
-from app.models.fpvr import REPORT_TITLES, ReportCode
-
-# Logical section name -> Unity Catalog table in DCSA_CATALOG_SCHEMA.
-SECTION_TABLES: dict[str, str] = {
-    "identity": "subject_identity",
-    "status": "subject_status",
-    "check": "subject_check",
-    "activity": "subject_activity",
-    "signal": "subject_signal",
-}
-
-# Columns selected for each section. SSN is queried then stripped from JSON.
-SECTION_COLUMNS: dict[str, tuple[str, ...]] = {
-    "identity": (
-        "SSN",
-        "FIRST_NAME",
-        "LAST_NAME",
-        "DATE_OF_BIRTH",
-        "PLACE_OF_BIRTH",
-        "SEX",
-        "CITIZENSHIP",
-        "MARITAL_STATUS",
-        "UPDATED_TS",
-        "RECORD_VERSION",
-    ),
-    "status": (
-        "SSN",
-        "ORG_CODE",
-        "POSITION_TITLE",
-        "DUTY_LOCATION",
-        "RISK_TIER",
-        "ELIGIBILITY_LEVEL",
-        "STATUS_CODE",
-        "STATUS_EFFECTIVE_DATE",
-        "UPDATED_TS",
-        "RECORD_VERSION",
-    ),
-    "check": (
-        "CHECK_ID",
-        "SSN",
-        "LOCATION_CODE",
-        "CHECK_TYPE",
-        "RESULT_CODE",
-        "RESULT_SCORE",
-        "CHECKED_TS",
-        "LOAD_SEQ",
-    ),
-    "activity": (
-        "ACTIVITY_ID",
-        "SSN",
-        "LOCATION_CODE",
-        "ACTIVITY_TYPE",
-        "DETAIL",
-        "EVENT_TS",
-        "LOAD_SEQ",
-    ),
-    "signal": (
-        "SIGNAL_ID",
-        "SSN",
-        "LOCATION_CODE",
-        "SIGNAL_TYPE",
-        "SEVERITY",
-        "SIGNAL_TS",
-        "LOAD_SEQ",
-    ),
-}
-
-REPORT_SOURCES: dict[ReportCode, tuple[str, ...]] = {
-    ReportCode.FPVR_1: ("identity", "status", "check"),
-    ReportCode.FPVR_2: ("check", "activity"),
-    ReportCode.FPVR_3: ("status", "check"),
-    ReportCode.FPVR_4: ("identity", "status"),
-    ReportCode.FPVR_5: ("signal",),
-    ReportCode.FPVR_6: ("identity", "status"),
-    ReportCode.FPVR_7: ("status",),
-}
-
-REPORT_READINESS: dict[ReportCode, str] = {
-    ReportCode.FPVR_1: (
-        "Ready when identity is resolved. identity, status, and check sections "
-        "may be empty arrays if ABAC hides rows."
-    ),
-    ReportCode.FPVR_2: "Pending until at least one check or activity row exists.",
-    ReportCode.FPVR_3: "Ready when at least one status row exists.",
-    ReportCode.FPVR_4: "Ready when identity is resolved; usually in-lake.",
-    ReportCode.FPVR_5: "Ready with zero or more alerts (empty signal list is valid).",
-    ReportCode.FPVR_6: "Ready when identity is present (Human Capital).",
-    ReportCode.FPVR_7: "Ready when STATUS_CODE is present on a status row.",
-}
-
-
-class IdentitySectionRow(BaseModel):
-    """Public identity section row (SSN omitted)."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    FIRST_NAME: str
-    LAST_NAME: str
-    DATE_OF_BIRTH: datetime | None = None
-    PLACE_OF_BIRTH: str | None = None
-    SEX: str | None = None
-    CITIZENSHIP: str | None = None
-    MARITAL_STATUS: str | None = None
-    UPDATED_TS: str | None = None
-    RECORD_VERSION: str | None = None
-
-
-class StatusSectionRow(BaseModel):
-    """Public status section row (SSN omitted)."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    ORG_CODE: str | None = None
-    POSITION_TITLE: str | None = None
-    DUTY_LOCATION: str | None = None
-    RISK_TIER: str | None = None
-    ELIGIBILITY_LEVEL: str | None = None
-    STATUS_CODE: str | None = None
-    STATUS_EFFECTIVE_DATE: str | None = None
-    UPDATED_TS: str | None = None
-    RECORD_VERSION: str | None = None
-
-
-class CheckSectionRow(BaseModel):
-    """Public check section row (SSN omitted)."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    CHECK_ID: str | None = None
-    LOCATION_CODE: str | None = None
-    CHECK_TYPE: str | None = None
-    RESULT_CODE: str | None = None
-    RESULT_SCORE: str | None = None
-    CHECKED_TS: str | None = None
-    LOAD_SEQ: str | None = None
-
-
-class ActivitySectionRow(BaseModel):
-    """Public activity section row (SSN omitted)."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    ACTIVITY_ID: str | None = None
-    LOCATION_CODE: str | None = None
-    ACTIVITY_TYPE: str | None = None
-    DETAIL: str | None = None
-    EVENT_TS: str | None = None
-    LOAD_SEQ: str | None = None
-
-
-class SignalSectionRow(BaseModel):
-    """Public signal section row (SSN omitted)."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    SIGNAL_ID: str | None = None
-    LOCATION_CODE: str | None = None
-    SIGNAL_TYPE: str | None = None
-    SEVERITY: str | None = None
-    SIGNAL_TS: str | None = None
-    LOAD_SEQ: str | None = None
-
-
-SECTION_ROW_MODELS: dict[str, type[BaseModel]] = {
-    "identity": IdentitySectionRow,
-    "status": StatusSectionRow,
-    "check": CheckSectionRow,
-    "activity": ActivitySectionRow,
-    "signal": SignalSectionRow,
-}
+SECTION_ROW_MODELS: dict[str, type[BaseModel]] = ready_source_models()
+IdentitySectionRow = SECTION_ROW_MODELS["identity"]
 
 
 class CatalogField(BaseModel):
@@ -197,7 +29,7 @@ class CatalogScenario(BaseModel):
 
 
 class CatalogApi(BaseModel):
-    """One of the three FPVR HTTP APIs (plus token)."""
+    """One FPVR HTTP API (token, create, list, or get by id)."""
 
     id: str
     method: str
@@ -209,9 +41,9 @@ class CatalogApi(BaseModel):
 
 
 class CatalogReport(BaseModel):
-    """Per-report GET /response payload contract."""
+    """Per-report payload contract nested in request.report."""
 
-    report_code: ReportCode
+    report_code: str
     title: str
     sources: list[str]
     tables: list[str]
@@ -228,27 +60,3 @@ class ApiCatalog(BaseModel):
     apis: list[CatalogApi]
     reports: list[CatalogReport]
     notes: list[str]
-
-
-def public_section_columns(section: str) -> tuple[str, ...]:
-    """Return section columns that appear in JSON (no SSN).
-
-    Args:
-        section: Logical source name.
-
-    Returns:
-        Column names in SELECT order minus SSN.
-    """
-    return tuple(c for c in SECTION_COLUMNS[section] if c != "SSN")
-
-
-def report_title(code: ReportCode) -> str:
-    """Return the display title for a report code.
-
-    Args:
-        code: FPVR report code.
-
-    Returns:
-        Human-readable title.
-    """
-    return REPORT_TITLES[code]

@@ -1,45 +1,61 @@
 """Official FPVR request HTTP routes."""
-
-from __future__ import annotations
-
-from fastapi import APIRouter, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.responses import JSONResponse
+from pydantic import ValidationError
 
 from app.core.candidates import CandidateTokenError
+from app.core.config import RequestStatusValue, get_settings
 from app.core.http_logging import current_request_id, gateway_error, log_failure
-from app.core.obo import get_obo_token
+from app.core.obo import bearer_scheme, get_obo_token
 from app.core.sql import WarehouseNotConfiguredError
 from app.models import ErrorResponse
 from app.models.fpvr import (
     AmbiguousSubjectResponse,
-    FPVRReportResponse,
-    FPVRRequestAccepted,
     FPVRRequestCreate,
-    FPVRRequestStatus,
 )
+from app.models.reports.registry import ready_report_models
+
 from app.services.fpvr import (
     AmbiguousSubjectError,
     FPVRRequestService,
     OfficialRequestNotFoundError,
-    RequestNotReadyError,
     SubjectNotFoundError,
     get_fpvr_request_service,
 )
 from app.services.reports import ReportQueryError
-from app.services.request_log import RequestLogError
+from app.services.request_log import RequestLogError, get_request_log_service
 from app.services.subject_identity import SubjectIdentityQueryError
 
-router = APIRouter(prefix="/v1/requests", tags=["fpvr-requests"])
+router = APIRouter(
+    prefix="/v1/requests",
+    tags=["fpvr-requests"],
+    dependencies=[Depends(bearer_scheme)],
+)
+
+_RETRY_AFTER_SECONDS = "5"
 
 _ERROR_RESPONSES = {
-    400: {"model": ErrorResponse},
     401: {"model": ErrorResponse},
     404: {"model": ErrorResponse},
+    400: {"model": ErrorResponse},
     409: {"model": AmbiguousSubjectResponse},
     502: {"model": ErrorResponse},
     503: {"model": ErrorResponse},
 }
 
+_GET_ERROR_RESPONSES = {
+    401: {"model": ErrorResponse},
+    404: {"model": ErrorResponse},
+    502: {"model": ErrorResponse},
+    503: {"model": ErrorResponse},
+}
+
+_LIST_ERROR_RESPONSES = {
+    400: {"model": ErrorResponse},
+    401: {"model": ErrorResponse},
+    502: {"model": ErrorResponse},
+    503: {"model": ErrorResponse},
+}
 
 def _caller(request: Request) -> str | None:
     """Best available caller identifier for the request log.
@@ -64,166 +80,117 @@ def _service() -> FPVRRequestService:
     """
     return get_fpvr_request_service()
 
+def _register_report_endpoint(report_code: str, response_model):
+    report_title = get_settings().report_title(report_code)
 
-@router.post(
-    "",
-    response_model=FPVRRequestAccepted,
-    status_code=200,
-    summary="Open an official FPVR request",
-    responses=_ERROR_RESPONSES,
-)
-def create_request(request: Request, body: FPVRRequestCreate):
-    """Resolve a subject and create an official request if the match is unique.
+    @router.post(
+        f"/{report_code}",
+        response_model=response_model,
+        status_code=201,
+        summary=f"Open an official {report_code} {report_title} request",
+        responses=_ERROR_RESPONSES,
+    )
+    def create_report_request(request: Request, body: FPVRRequestCreate, response: Response):
+        token = get_obo_token(request)
+        try:
+            accepted = _service().create(
+                body,
+                report_code=report_code,
+                user_token=token,
+                requested_by=_caller(request),
+            )
+            response.headers["Location"] = f"/api/v1/requests/{report_code}/{accepted.request_id}"
+            if accepted.status == RequestStatusValue.pending:
+                response.headers["Retry-After"] = _RETRY_AFTER_SECONDS
+            return response_model.model_validate(accepted.model_dump())
+        except CandidateTokenError as e:
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(e)) from e
+        except SubjectNotFoundError as e:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e)) from e
+        except AmbiguousSubjectError as e:
+            content = e.response.model_dump(mode="json")
+            content["request_id"] = current_request_id(request)
+            return JSONResponse(
+                status_code=status.HTTP_409_CONFLICT,
+                content=content,
+                headers={"X-Request-Id": current_request_id(request)},
+            )
+        except WarehouseNotConfiguredError as e:
+            log_failure(request, e, step="warehouse", report_code=report_code)
+            raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(e)) from e
+        except SubjectIdentityQueryError as e:
+            raise gateway_error(
+                request, e, detail="FPVR request failed", step="identity_sql",
+                report_code=report_code,
+            ) from e
+        except ReportQueryError as e:
+            raise gateway_error(
+                request, e, detail="FPVR request failed", step="report_sql",
+                report_code=report_code,
+            ) from e
+        except RequestLogError as e:
+            raise gateway_error(
+                request, e, detail="FPVR request failed", step="request_log",
+                report_code=report_code,
+            ) from e
 
-    SSN is optional. First name, last name, and date of birth that match exactly
-    one person is enough. Multiple matches return 409 without SSN.
-    \f
-    Args:
-        request: Incoming request carrying the caller token.
-        body: Report code and identity filters or candidate_id.
+    @router.get(
+        f"/{report_code}/{{request_id}}",
+        response_model=response_model,
+        summary=f"Get an official {report_code} {report_title} request",
+        responses={
+            401: {"model": ErrorResponse},
+            404: {"model": ErrorResponse},
+            502: {"model": ErrorResponse},
+            503: {"model": ErrorResponse},
+        },
+    )
+    def get_report_request(request: Request, request_id: str, response: Response):
+        """Return the same typed body as the matching POST route.
 
-    Returns:
-        request_id and initial status.
+        Unknown ids or requests logged for another report code return 404.
+        \f
+        Args:
+            request: Incoming request carrying the caller token.
+            request_id: Handle from POST /v1/requests/{report_code}.
+            response: FastAPI response used to set Retry-After.
 
-    Raises:
-        HTTPException: 400/401/404/409/502/503 depending on resolution and SQL.
-    """
-    token = get_obo_token(request)
-    try:
-        return _service().create(body, user_token=token, requested_by=_caller(request))
-    except CandidateTokenError as e:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from e
-    except SubjectNotFoundError as e:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e)) from e
-    except AmbiguousSubjectError as e:
-        content = e.response.model_dump(mode="json")
-        content["request_id"] = current_request_id(request)
-        return JSONResponse(
-            status_code=status.HTTP_409_CONFLICT,
-            content=content,
-            headers={"X-Request-Id": current_request_id(request)},
-        )
-    except WarehouseNotConfiguredError as e:
-        log_failure(request, e, step="warehouse", report_code=body.report_code.value)
-        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(e)) from e
-    except SubjectIdentityQueryError as e:
-        raise gateway_error(
-            request, e, detail="FPVR request failed", step="identity_sql",
-            report_code=body.report_code.value,
-        ) from e
-    except ReportQueryError as e:
-        raise gateway_error(
-            request, e, detail="FPVR request failed", step="report_sql",
-            report_code=body.report_code.value,
-        ) from e
-    except RequestLogError as e:
-        raise gateway_error(
-            request, e, detail="FPVR request failed", step="request_log",
-            report_code=body.report_code.value,
-        ) from e
+        Returns:
+            Request envelope. ``report`` is set when ready.
 
-
-@router.get(
-    "/{request_id}",
-    response_model=FPVRRequestStatus,
-    summary="Get FPVR request status",
-    responses={
-        401: {"model": ErrorResponse},
-        404: {"model": ErrorResponse},
-        502: {"model": ErrorResponse},
-        503: {"model": ErrorResponse},
-    },
-)
-def get_request_status(request: Request, request_id: str) -> FPVRRequestStatus:
-    """Poll whether a request is pending, ready, or failed.
-
-    Pending requests re-check Unity Catalog on each poll and may become ready.
-    \f
-    Args:
-        request: Incoming request carrying the caller token.
-        request_id: Handle from POST /v1/requests.
-
-    Returns:
-        Status without SSN.
-
-    Raises:
-        HTTPException: 401/404/502/503.
-    """
-    token = get_obo_token(request)
-    try:
-        return _service().status(request_id, user_token=token)
-    except OfficialRequestNotFoundError as e:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Request not found") from e
-    except WarehouseNotConfiguredError as e:
-        log_failure(request, e, step="warehouse", fpvr_request_id=request_id)
-        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(e)) from e
-    except SubjectIdentityQueryError as e:
-        raise gateway_error(
-            request, e, detail="Status lookup failed", step="identity_sql",
-            fpvr_request_id=request_id,
-        ) from e
-    except ReportQueryError as e:
-        raise gateway_error(
-            request, e, detail="Status lookup failed", step="report_sql",
-            fpvr_request_id=request_id,
-        ) from e
-    except RequestLogError as e:
-        raise gateway_error(
-            request, e, detail="Status lookup failed", step="request_log",
-            fpvr_request_id=request_id,
-        ) from e
+        Raises:
+            HTTPException: 401/404/502/503.
+        """
+        token = get_obo_token(request)
+        try:
+            row = get_request_log_service().get(request_id, user_token=token)
+            if row is None or row.get("report_code") != report_code:
+                raise OfficialRequestNotFoundError(request_id)
+            accepted = _service().get(request_id, user_token=token)
+            if accepted.status == RequestStatusValue.pending:
+                response.headers["Retry-After"] = _RETRY_AFTER_SECONDS
+            return response_model.model_validate(accepted.model_dump())
+        except OfficialRequestNotFoundError as e:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Request not found") from e
+        except WarehouseNotConfiguredError as e:
+            log_failure(request, e, step="warehouse", fpvr_request_id=request_id)
+            raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(e)) from e
+        except SubjectIdentityQueryError as e:
+            raise gateway_error(
+                request, e, detail="Status lookup failed", step="identity_sql",
+                fpvr_request_id=request_id,
+            ) from e
+        except ReportQueryError as e:
+            raise gateway_error(
+                request, e, detail="Status lookup failed", step="report_sql",
+                fpvr_request_id=request_id,
+            ) from e
+        except RequestLogError as e:
+            raise gateway_error(
+                request, e, detail="Status lookup failed", step="request_log",
+                fpvr_request_id=request_id,
+            ) from e
 
 
-@router.get(
-    "/{request_id}/response",
-    response_model=FPVRReportResponse,
-    summary="Get FPVR report payload",
-    responses={
-        401: {"model": ErrorResponse},
-        404: {"model": ErrorResponse},
-        409: {"model": ErrorResponse},
-        502: {"model": ErrorResponse},
-        503: {"model": ErrorResponse},
-    },
-)
-def get_request_response(request: Request, request_id: str) -> FPVRReportResponse:
-    """Return report data for a ready request. Queries Unity Catalog as the caller (OBO).
-    \f
-    Args:
-        request: Incoming request carrying the caller token.
-        request_id: Handle from POST /v1/requests.
-
-    Returns:
-        Report JSON without SSN.
-
-    Raises:
-        HTTPException: 409 if not ready, plus 401/404/502/503.
-    """
-    token = get_obo_token(request)
-    try:
-        return _service().response(request_id, user_token=token)
-    except OfficialRequestNotFoundError as e:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Request not found") from e
-    except RequestNotReadyError as e:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Request is not ready",
-        ) from e
-    except WarehouseNotConfiguredError as e:
-        log_failure(request, e, step="warehouse", fpvr_request_id=request_id)
-        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(e)) from e
-    except SubjectIdentityQueryError as e:
-        raise gateway_error(
-            request, e, detail="Report query failed", step="identity_sql",
-            fpvr_request_id=request_id,
-        ) from e
-    except ReportQueryError as e:
-        raise gateway_error(
-            request, e, detail="Report query failed", step="report_sql",
-            fpvr_request_id=request_id,
-        ) from e
-    except RequestLogError as e:
-        raise gateway_error(
-            request, e, detail="Report query failed", step="request_log",
-            fpvr_request_id=request_id,
-        ) from e
+for report_code, response_model in ready_report_models().items():
+    _register_report_endpoint(report_code, response_model)

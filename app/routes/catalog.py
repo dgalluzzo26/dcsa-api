@@ -22,8 +22,8 @@ router = APIRouter(tags=["catalog"])
 def get_catalog() -> ApiCatalog:
     """Return the caller contract for token, request, status, and response APIs.
 
-    Includes HTTP scenarios and the exact ``data`` section fields for FPVR-1
-    through FPVR-7.
+    Includes HTTP scenarios and the exact ``data`` section fields for each
+    configured report.
     \f
     Returns:
         Typed catalog generated from the same report contract the assembler uses.
@@ -100,13 +100,15 @@ def _render_help(catalog: ApiCatalog) -> str:
 
     parts.append("<h2>Report response schemas</h2>")
     parts.append(
-        "<p class='muted'>GET /api/v1/requests/{id}/response envelope: "
-        "request_id, report_code, report_title, subject (no SSN), data "
-        "(section name → array of rows, no SSN).</p>"
+        "<p class='muted'>GET /api/v1/requests/fpvr-{n}/{id} envelope (same as POST): "
+        "request_id, status, requested_at, requested_by, resolution_method, "
+        "source (internal or external, default external), "
+        "report (null if not ready). report.code, report.title, report.subject, "
+        "and report.data have no SSN.</p>"
     )
     for report in catalog.reports:
         parts.append(
-            f"<h3>{escape(report.report_code.value)} — {escape(report.title)}</h3>"
+            f"<h3>{escape(report.report_code)} — {escape(report.title)}</h3>"
         )
         parts.append(f"<p>{escape(report.readiness)}</p>")
         parts.append(

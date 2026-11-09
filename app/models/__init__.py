@@ -13,17 +13,27 @@ from app.models.fpvr import (
     FPVRReportResponse,
     FPVRRequestAccepted,
     FPVRRequestCreate,
-    FPVRRequestStatus,
+    FPVRRequestListQuery,
+    FPVRRequestListResponse,
+    FPVRSubjectCreate,
     ReportCode,
+    RequestSource,
     RequestStatusValue,
     SubjectCandidate,
 )
 from app.models.report_contract import ApiCatalog
+from app.models.reports.registry import ready_report_models
+from app.models.sources.registry import ready_source_models
 from app.models.subject_identity import (
     SubjectIdentity,
     SubjectIdentityListResponse,
     SubjectIdentitySearch,
 )
+
+_SOURCE_ROWS = ready_source_models()
+globals().update({cls.__name__: cls for cls in _SOURCE_ROWS.values()})
+_REPORT_ACCEPTED = ready_report_models()
+globals().update({cls.__name__: cls for cls in _REPORT_ACCEPTED.values()})
 
 
 class HealthResponse(BaseModel):
@@ -77,13 +87,19 @@ __all__ = [
     "FPVRReportResponse",
     "FPVRRequestAccepted",
     "FPVRRequestCreate",
-    "FPVRRequestStatus",
+    "FPVRRequestListQuery",
+    "FPVRRequestListResponse",
+    "FPVRSubjectCreate",
     "HealthResponse",
     "MeResponse",
-    "ReportCode",
-    "RequestStatusValue",
+    "RequestSource",
+    "OfficialReport",
+    "OfficialRequestAccepted",
+    "OfficialRequestCreate",
     "SubjectCandidate",
     "SubjectIdentity",
     "SubjectIdentityListResponse",
     "SubjectIdentitySearch",
+    *sorted(cls.__name__ for cls in _SOURCE_ROWS.values()),
+    *sorted(cls.__name__ for cls in _REPORT_ACCEPTED.values()),
 ]
